@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 用示例 vault 构建工作台（clone 即可跑的保证）
+        run: |
+          cd dashboard
+          python3 build.py --vault .. --out .
+
+      - name: 确认 9 个页面都生成了
+        run: |
+          for page in index ideas auto-hotspots radar pipeline analytics library cheat dbs; do
+            test -s "dashboard/$page.html" || { echo "missing page: $page"; exit 1; }
+          done
+
+      - name: 单元测试
+        run: python3 -m unittest discover -s dashboard/tests -t dashboard/tests
+
+      - name: 构建产物不得被提交
+        run: |
+          if git ls-files --error-unmatch dashboard/index.html 2>/dev/null; then
+            echo "dashboard/*.html 被提交了——构建产物内嵌全量 data.json，必须保持 gitignore"
+            exit 1
+          fi

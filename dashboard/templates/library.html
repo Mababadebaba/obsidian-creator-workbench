@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>弹药库 · 内容工作台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap"></noscript>
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="library" class="screen-library-v6">
+  <div class="bg"></div>
+  <div class="grain"></div>
+  <div class="app">
+    <nav class="side" aria-label="工作台导航">
+      <a class="s-brand" href="index.html"><span class="s-mark"></span><span class="s-name">内容工作台<i>Content Workbench</i></span></a>
+      <div class="s-sec">工作台</div>
+      <a class="s-item" href="index.html"><i>⌂</i>总台</a>
+      <a class="s-item" href="radar.html"><i>⌁</i>今日雷达</a>
+      <a class="s-item" href="auto-hotspots.html"><i>⧉</i>自动化热点库</a>
+      <a class="s-item" href="ideas.html"><i>◎</i>我的灵感</a>
+      <a class="s-item" href="pipeline.html"><i>◷</i>选题排期</a>
+      <a class="s-item" href="analytics.html"><i>◫</i>视频数据</a>
+      <a class="s-item on" href="library.html"><i>▦</i>弹药库</a>
+      <div class="s-sec">Skills</div>
+      <a class="s-item" href="cheat.html"><i>◉</i>cheat 校准</a>
+      <a class="s-item" href="dbs.html"><i>◈</i>dbs 工具箱</a>
+      <div class="s-foot" id="side-status"></div>
+    </nav>
+    <main class="screen screen-library-v6">
+      <section id="page-hero" class="hero compact"></section>
+      <section id="library-kpis" class="kpi-row"></section>
+      <section class="glass panel method-stage">
+        <div class="panel-head method-stage-head">
+          <div>
+            <h2>📚 方法论库</h2>
+            <p class="section-note">把已经验证过的选题、文案、运营判断放在这里，点开即可读全文。</p>
+          </div>
+          <div id="method-filter" class="method-filter" aria-label="方法论筛选"></div>
+        </div>
+        <div id="method-grid" class="method-grid"></div>
+      </section>
+      <section class="glass panel ammo-stage">
+        <div class="panel-head">
+          <div>
+            <h2>🧰 素材弹药</h2>
+            <p class="section-note">素材是配角：用来补解释、补证据、补标题句子和结构模板。</p>
+          </div>
+        </div>
+        <div id="ammo-grid" class="ammo-grid"></div>
+      </section>
+    </main>
+  </div>
+  <div id="method-modal" class="method-modal" hidden>
+    <button class="method-modal-shade" type="button" data-close-method aria-label="关闭方法论全文"></button>
+    <article class="method-modal-panel" role="dialog" aria-modal="true" aria-labelledby="method-modal-title">
+      <button class="method-modal-close" type="button" data-close-method aria-label="关闭">×</button>
+      <div class="method-modal-top">
+        <span id="method-modal-category" class="method-badge"></span>
+        <span id="method-modal-updated" class="method-updated"></span>
+      </div>
+      <h2 id="method-modal-title"></h2>
+      <div id="method-modal-body" class="method-body"></div>
+      <a id="method-modal-source" class="method-source-link" href="#" target="_blank" rel="noopener noreferrer">在 Obsidian 中打开 →</a>
+    </article>
+  </div>
+  <div id="corner-chip" class="corner-chip">Generated from Obsidian · LIBRARY · Obsidian Vault</div>
+  <script id="dashboard-data" type="application/json">__DASHBOARD_DATA__</script>
+  <script src="assets/app.js"></script>
+  <script src="assets/effects.js"></script>
+</body>
+</html>

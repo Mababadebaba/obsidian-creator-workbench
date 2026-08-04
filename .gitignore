@@ -1,0 +1,18 @@
+# ⚠️ 构建产物内嵌了整份 data.json，一旦提交等于把 vault 内容全量公开。永远不要放开这两条。
+dashboard/*.html
+dashboard/assets/data.json
+
+# 本地运行痕迹
+.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+.cheat-cache/
+06-业务运营/cron/*.log
+
+# 如果你把这个仓库当成自己的 vault 用，取消下面的注释，避免把私人内容推上去
+# 02-素材库/
+# 03-已发布内容/
+# predictions/
+# videos/
+# candidates.md

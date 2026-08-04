@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>视频数据 · 内容工作台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap"></noscript>
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="analytics" class="screen-analytics-v6">
+  <div class="bg"></div>
+  <div class="grain"></div>
+  <div class="app">
+    <nav class="side" aria-label="工作台导航">
+      <a class="s-brand" href="index.html"><span class="s-mark"></span><span class="s-name">内容工作台<i>Content Workbench</i></span></a>
+      <div class="s-sec">工作台</div>
+      <a class="s-item" href="index.html"><i>⌂</i>总台</a>
+      <a class="s-item" href="radar.html"><i>⌁</i>今日雷达</a>
+      <a class="s-item" href="auto-hotspots.html"><i>⧉</i>自动化热点库</a>
+      <a class="s-item" href="ideas.html"><i>◎</i>我的灵感</a>
+      <a class="s-item" href="pipeline.html"><i>◷</i>选题排期</a>
+      <a class="s-item on" href="analytics.html"><i>◫</i>视频数据</a>
+      <a class="s-item" href="library.html"><i>▦</i>弹药库</a>
+      <div class="s-sec">Skills</div>
+      <a class="s-item" href="cheat.html"><i>◉</i>cheat 校准</a>
+      <a class="s-item" href="dbs.html"><i>◈</i>dbs 工具箱</a>
+      <div class="s-foot" id="side-status"></div>
+    </nav>
+    <main class="screen screen-analytics-v6">
+      <section id="page-hero" class="hero compact"></section>
+      <section id="analytics-kpis" class="kpi-row six"></section>
+      <section id="analytics-gauge" class="an-gauge-row" hidden></section>
+      <section class="glass panel analytics-table-panel">
+        <div class="panel-head"><h2>已发视频明细</h2><span id="analytics-empty-chip" class="chip"></span></div>
+        <div class="table-wrap"><table><thead><tr><th>标题</th><th>平台</th><th>类型</th><th>发布日</th><th>播放量</th><th>完播率</th><th>跳出率</th><th>赞</th><th>赞播比</th><th>预测 vs 实际</th></tr></thead><tbody id="published-body"></tbody></table></div>
+      </section>
+      <section class="analytics-layout">
+        <div class="glass panel"><div class="panel-head"><h2>逐条视频趋势</h2><span class="chip">每个点 = 一条视频</span></div><div id="analytics-video-tabs" class="vtabs"></div><div id="analytics-video-chart" class="vchart analytics-vchart"></div></div>
+        <div class="glass panel"><div class="panel-head"><h2>类型轮播对比</h2><span class="chip">播放 / 完播 / 跳出</span></div><div id="analytics-bars"></div></div>
+      </section>
+    </main>
+  </div>
+  <div id="corner-chip" class="corner-chip">Generated from Obsidian · ANALYTICS · Obsidian Vault</div>
+  <script id="dashboard-data" type="application/json">__DASHBOARD_DATA__</script>
+  <script src="assets/app.js"></script>
+  <script src="assets/effects.js"></script>
+</body>
+</html>

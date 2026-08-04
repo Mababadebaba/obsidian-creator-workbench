@@ -1,0 +1,16 @@
+{
+  "//": "热点数据源配置。type 目前支持 hackernews / github / rss，都不需要 API key。",
+  "//2": "加一个中文源就复制一段 rss，把 url 换成你常看的博客/媒体的 RSS 地址。",
+  "sources": [
+    { "id": "hackernews", "type": "hackernews", "label": "Hacker News 首页", "limit": 20, "enabled": true },
+    { "id": "github", "type": "github", "label": "GitHub 新星项目", "limit": 15, "days": 7, "enabled": true },
+    {
+      "id": "example-rss",
+      "type": "rss",
+      "label": "示例 RSS 源（换成你自己的）",
+      "url": "https://hnrss.org/frontpage",
+      "limit": 10,
+      "enabled": false
+    }
+  ]
+}
