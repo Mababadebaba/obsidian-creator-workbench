@@ -2,7 +2,7 @@
 
 **这是给完全没数据的新博主用的占位 rubric。**它会打错。**前 5 篇预测精度大概 ±50%——这是 cold-start 的数学事实，不是 rubric 失败**。
 
-跑完 5 篇（每篇都走完 `/cheat-predict` → 发布 → `/cheat-retro` 闭环）之后，你会有第一份个人校准数据，可以提议第一次 `/cheat-bump` 升级到 v1（或直接采用 [opinion-video.md](opinion-video.md) 的 v2 作为起点重新校准权重）。
+跑完 5 篇（每篇都走完 `/cheat-predict` → 发布 → `/cheat-retro` 闭环）之后，你会有第一份个人校准数据，可以提议第一次 `/cheat-bump` 升级到 v1（或直接采用 [cheat-on-content 的 opinion-video 参考 rubric](https://github.com/XBuilderLAB/cheat-on-content) 的 v2 作为起点重新校准权重）。
 
 ---
 
@@ -66,20 +66,30 @@ composite = (ER + HP + QL + NA + AB + SR + SAT) / 7 × 2.0
 - **3** — 触到公认现象但没新视角
 - **5** — 命名了一个观众认识但没有语言形容的结构性模式
 
-### SAT — Satire Depth（讽刺深度）
-*稿子用了多层反讽 / 戏仿格式吗？*
+### SAT — Satisfaction（满足感）
+*结尾兑现开头的承诺了吗？*
 
-- **0** — 真诚直陈
-- **3** — 一层反讽
-- **5** — 嵌套或自指反讽
+- **0** — 开头承诺的东西根本没给，或给了但完全不是一回事
+- **1** — 给了，但要观众自己拼；看完说不出"我到底拿到了什么"
+- **3** — 承诺兑现了，但结尾平；没有"值了"的收束感
+- **5** — 兑现且超出：给的比承诺的多一层，收尾有落点，观众能一句话复述收获
 
-如果你的频道走真诚路线，SAT 给 3 当占位即可。
+打分锚点：**回到前 5 秒的钩子，逐字看它许了什么**，再看结尾有没有还上。
+钩子越具体（数字、结果、场景），这一维越好判；钩子含糊的稿子，SAT 天然打不高——这是钩子的问题，不是结尾的问题。
+
+> **口径变更记录（2026-08-04，calibration_samples=1）**
+> 本维原为 starter rubric 的 `Satire Depth（讽刺深度）`，规则是"走真诚路线给 3 当占位"。
+> 本账号是真诚 builder 路线，该维恒为 3，等于白占一个维度、对 composite 零贡献。
+> 趁样本只有 1 条改成 `Satisfaction（满足感）`，让它变成活维度。
+> **代价**：`predictions/2026-01-08…` 之前的 SAT 分按旧定义打，跨定义不可比；
+> 该样本的 SAT 实际已由用户 override 成 3（"真诚路线占位"），对 composite 影响 = 0，**可安全并入新口径**。
+> 详见 [[rubric-memo]] 观察记录。
 
 ---
 
 ## Bucket 预测：所有阶段统一格式 + 渐进信心标注
 
-> 早期预测精度差是数学事实——**不通过省略 bucket 解决**，通过 **header 的 confidence 等级 + 概率分布更平**来诚实表达不确定。详见 [shared-references/prediction-anatomy.md](../shared-references/prediction-anatomy.md) 和 [state-management.md 的 confidence 表](../shared-references/state-management.md)。
+> 早期预测精度差是数学事实——**不通过省略 bucket 解决**，通过 **header 的 confidence 等级 + 概率分布更平**来诚实表达不确定。详见 cheat-on-content 的 `shared-references/prediction-anatomy.md` 和 cheat-on-content 的 `shared-references/state-management.md` 的 confidence 表。
 >
 > calibration_samples 少时，概率分布**应该更平**（如 30/30/20/15/5 而非 5/40/45/8/2）——**这是诚实表达不确定的方式**，不是把 bucket 跳过。
 
@@ -169,7 +179,7 @@ cold-start 期的"预测"不是预测——是**数据采集**。理解这一点
 **反直觉但正确的做法**：cold-start 期主动选维度组合差异最大的样本：
 - 1 篇 ER 主导（情感向，SR 低）
 - 1 篇 SR 主导（社会议题向，ER 低）
-- 1 篇 SAT 主导（讽刺向）
+- 1 篇 SAT 主导（钩子许了具体承诺、结尾扎实兑现的"闭环感"稿）
 - 1 篇 QL 主导（金句密集）
 - 1 篇综合中等（all 3-4）
 
@@ -212,7 +222,7 @@ cold-start 期的"预测"不是预测——是**数据采集**。理解这一点
 跑 `/cheat-bump --propose "<你的具体权重调整>"`。系统会强制全量重打 + 跨模型审核。
 
 ### 路径 B：直接采纳 v2 作为起点
-把 [opinion-video.md](opinion-video.md) 的 v2 公式抄到你的 `rubric_notes.md`，**然后跑 `/cheat-bump`**——bump 流程会用你的 5 篇数据验证 v2 在你账号上是否真的更优。
+把 [cheat-on-content 的 opinion-video 参考 rubric](https://github.com/XBuilderLAB/cheat-on-content) 的 v2 公式抄到你的 `rubric_notes.md`，**然后跑 `/cheat-bump`**——bump 流程会用你的 5 篇数据验证 v2 在你账号上是否真的更优。
 
 ### 路径 C：保持 v0 等权，跑更多样本
 如果 5 篇还看不出明显 pattern，再跑 5 篇。等权的 v0 在 10-15 个样本之前都不丢人。

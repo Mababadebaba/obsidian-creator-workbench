@@ -50,7 +50,7 @@
 ## 30 秒看到效果
 
 ```bash
-git clone <this-repo> obsidian-creator-workbench
+git clone https://github.com/fengjunchengCode/obsidian-creator-workbench.git
 cd obsidian-creator-workbench/dashboard
 python3 build.py     # 读上一级目录的示例内容，生成 9 个页面
 python3 serve.py     # 打开 http://127.0.0.1:8000

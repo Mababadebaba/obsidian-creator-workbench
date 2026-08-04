@@ -28,6 +28,17 @@ jobs:
       - name: 单元测试
         run: python3 -m unittest discover -s dashboard/tests -t dashboard/tests
 
+      - name: 开源就绪审计（死链 / 占位符 / 署名 / PAGES 契约）
+        run: |
+          # Actions 默认 bash -e，审计返回 2（仅提醒）会直接中断，所以先关掉
+          set +e
+          python3 tools/oss_audit.py .
+          code=$?
+          set -e
+          # 0=全绿，2=只有提醒 → 都放行；1=有 error → 红
+          if [ "$code" -eq 1 ]; then exit 1; fi
+          exit 0
+
       - name: 构建产物不得被提交
         run: |
           if git ls-files --error-unmatch dashboard/index.html 2>/dev/null; then

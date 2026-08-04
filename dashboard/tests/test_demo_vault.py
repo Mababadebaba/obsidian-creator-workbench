@@ -58,15 +58,18 @@ class DemoVaultTests(unittest.TestCase):
         )
         self.assertTrue(retro["verified"] or retro["refuted"], "预测验证/推翻列表都是空的")
 
-    def test_rubric_formula_and_scale_agree_with_claude_md(self):
-        """CLAUDE.md 的评分段与 rubric_notes.md 的公式、量表必须一致。
+    def test_rubric_doc_stays_consistent_with_claude_md(self):
+        """CLAUDE.md 的评分段与 rubric_notes.md 必须完全一致。
 
-        注意：示例仓库**故意保留**一条 semantics 级差异（SAT 的定义），
-        用来展示这个一致性检查器确实在工作——它只读只报，绝不改写你的文件。
+        工作台每次构建都会比对两处并在 cheat 页报冲突（只读只报，绝不改写文件）。
+        这条测试保证仓库不会带着已知冲突发布——你改了任一边忘了改另一边，CI 就会红。
         """
-        kinds = {conflict["kind"] for conflict in self.data["cheat"]["doc_conflicts"]}
-        self.assertNotIn("formula", kinds, "综合分公式两处不一致")
-        self.assertNotIn("scale", kinds, "评分量表两处不一致")
+        conflicts = self.data["cheat"]["doc_conflicts"]
+        self.assertEqual(
+            conflicts, [],
+            "CLAUDE.md 的「7 维评分体系」段与 rubric_notes.md 不一致："
+            + "；".join(f"{c['kind']}: rubric_notes={c['expected']} vs CLAUDE.md={c['found']}" for c in conflicts),
+        )
 
     def test_build_writes_nine_pages_with_inline_json(self):
         with tempfile.TemporaryDirectory() as tmp:
