@@ -261,6 +261,25 @@ def merge_into_radar(existing: str, full_section: str, now: datetime) -> str:
 
 # ---------------------------------------------------------------------------
 
+def update_state(vault: Path, now: datetime, count: int) -> None:
+    """回填 .cheat-state.json 的抓取时间。
+
+    不写的话，会话状态报告会一直按旧值报「上次抓热点 N 天前」——
+    雷达其实是新的，告警却在撒谎，比没有告警更糟。
+    """
+    path = vault / ".cheat-state.json"
+    if not path.exists():
+        return
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        print("⚠️  .cheat-state.json 读不动，跳过抓取时间回填", file=sys.stderr)
+        return
+    state["last_trends_run_at"] = now.astimezone().isoformat(timespec="seconds")
+    state["last_trends_added_count"] = count
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="抓取公开热点写入雷达文件的全量抓取区")
     parser.add_argument("--vault", type=Path, default=DEFAULT_VAULT, help="vault 根目录")
@@ -314,6 +333,7 @@ def main(argv: list[str] | None = None) -> int:
     radar_path.write_text(merge_into_radar(existing, section, now), encoding="utf-8")
 
     total = sum(len(items) for _, items in groups)
+    update_state(args.vault, now, total)
     print(f"\n📡 已写入 {radar_path}（{total} 条，精选区未改动）")
     print("下一步：对 AI 说「刷新热点雷达」，让它挑选并补角度/钩子")
     print("然后：cd dashboard && python3 build.py")
