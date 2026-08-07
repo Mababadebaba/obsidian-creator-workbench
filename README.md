@@ -40,7 +40,7 @@
 | 复盘停在「这条数据还行」 | 预测 vs 实绩逐条对照，偏差方向连续 3 次一致才允许改评分标准，避免一次波动就推翻方法 |
 | 方法论在脑子里，写的时候想不起来 | 17 篇成文方法论躺在库里，AI 写稿时直接按它们搭骨架 |
 | 不知道今天该干什么 | 工作台按每篇稿子的状态排出下一步动作：该打分的、该拍的、该复盘的 |
-| 没素材可做 | 内置零依赖热点抓取器（HN / GitHub / RSS），抓完让 AI 过一遍方向三问挑出能做的 |
+| 没素材可做 | 内置零依赖热点抓取器（AIHOT / follow-builders / HN / GitHub / RSS），抓完让 AI 过一遍方向三问挑出能做的 |
 | 想做类型实验但记不住做过什么 | 5 类内容固定轮播，每类的样本数和中位数据自动汇总 |
 
 **一句话**：它不帮你写得更快，它帮你不重复犯同一个错。
@@ -91,7 +91,7 @@ python3 serve.py     # 打开 http://127.0.0.1:8000
 **数据怎么来的**（两步，都不需要 API key、不需要定时任务）：
 
 ```bash
-python3 tools/fetch_trends.py     # ① 抓原文（Hacker News / GitHub / 任意 RSS）
+python3 tools/fetch_trends.py     # ① 抓原文（默认 AIHOT + follow-builders）
 # ② 对 AI 说「刷新热点雷达」：过方向三问 → 挑选 → 补角度和钩子
 cd dashboard && python3 build.py  # ③ 重建
 ```
@@ -330,7 +330,7 @@ bash 06-业务运营/cron/install-public-workbench-launchagents.sh
 构建、渲染、打分、复盘全程离线，工作台是静态 HTML，用 `file://` 打开都能跑。
 
 唯一会联网的是可选的热点抓取器 `tools/fetch_trends.py`，而它只做**出站读取**——
-向你自己配置的公开地址（Hacker News、GitHub、你填的 RSS）发 GET 请求拿数据，
+向你自己配置的公开地址（默认 AIHOT 和 Zara Zhang 维护的 follow-builders，也支持 Hacker News、GitHub、RSS）发 GET 请求拿数据，
 不发送、不上传你 vault 里的任何东西。不想联网就别跑它，其余功能完全不受影响。
 
 **Q：仓库里的示例内容是真的吗？**

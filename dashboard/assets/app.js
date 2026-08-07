@@ -1081,7 +1081,7 @@
       { label: "今日命中", value: radar.hit_count || 0, note: "今日值得做", hot: true },
       { label: "文档筛出", value: radar.reported_hit_count || "—", note: "已归档" },
       { label: "Tier1", value: sortedSignals.filter(item => item.tier_rank === 1).length, note: "优先级最高", hot: true },
-      { label: "全量备查", value: radar.full_fetch?.length || 0, note: "全部抓取源" }
+      { label: "全量备查", value: radar.full_fetch?.length || 0, note: "AI HOT + builders" }
     ], "steel");
     /* 签名动效：canvas 雷达扫描盘（effects.js 能力 7），数据经 data-* 传入 */
     const discData = sortedSignals.map(signal => ({

@@ -16,7 +16,9 @@
   "data_layer": "markdown",
   "hooks_installed": true,
   "enabled_trend_sources": [
-    "manual-paste"
+    "manual-paste",
+    "aihot",
+    "follow-builders"
   ],
   "enabled_perf_adapters": [],
   "last_bump_at": null,

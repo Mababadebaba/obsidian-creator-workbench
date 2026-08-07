@@ -594,7 +594,11 @@ def parse_schedule(path: Path, warnings: list[str]) -> dict[str, Any]:
 def extract_callout_title(raw: str) -> str:
     title = clean_markdown(re.sub(r"`[^`]+`", "", raw))
     title = re.sub(r"^[🔥🧠💰🔵🔴🟣🟢\s]+", "", title)
-    title = re.sub(r"^(热点位|方法论位|赚钱位|共鸣/反常识备选|共鸣位)\s*[①-⑩\d]*[　\s-]*", "", title)
+    title = re.sub(
+        r"^(热点位|方法论位|赚钱位|共鸣/反常识备选|共鸣位)\s*(?:圈)?[①-⑩\d]*[:：]?[　\s-]*",
+        "",
+        title,
+    )
     return title.strip(" -")
 
 
@@ -632,6 +636,7 @@ def parse_radar(path: Path, warnings: list[str]) -> dict[str, Any]:
         "example": "方法论",
         "success": "AI赚钱方式",
         "tip": "共鸣类",
+        "quote": "共鸣类",
     }
 
     def finish_signal() -> None:

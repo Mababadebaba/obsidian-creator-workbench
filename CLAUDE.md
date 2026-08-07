@@ -92,6 +92,9 @@
 
 **前提**：`🔥每日热点雷达.md` 的「📡 全量抓取」区需要先有原文。没有就先让用户跑
 `python3 tools/fetch_trends.py`（零依赖抓取器，不需要 key）。**不要自己编热点。**
+默认真实源是 AIHOT（`all=100 + selected=50` 合并去重）与
+[`zarazhangrui/follow-builders`](https://github.com/zarazhangrui/follow-builders)（X 主源，Blog/Podcast 独立降级）；
+它们都不需要 key。实际启用项以 `tools/trends-sources.json` 为准。
 
 1. 读「📡 全量抓取」区的全部条目
 2. **逐条过方向三问**（`选题方法论` 第 0 关）——方向外的一律不进精选，再热也不进

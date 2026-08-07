@@ -14,7 +14,7 @@
 
     python3 tools/fetch_trends.py                  # 抓取并写入雷达文件
     python3 tools/fetch_trends.py --dry-run        # 只打印，不写文件
-    python3 tools/fetch_trends.py --sources hackernews
+    python3 tools/fetch_trends.py --sources aihot,follow-builders-x
     python3 tools/fetch_trends.py --vault ~/my-vault --limit 30
 """
 
@@ -24,6 +24,7 @@ import argparse
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -68,16 +69,47 @@ def one_line(text: str, limit: int = 220) -> str:
     return text[: limit - 1] + "…" if len(text) > limit else text
 
 
-def get_json(url: str) -> object:
-    request = urllib.request.Request(url, headers={"User-Agent": "content-workbench/1.0"})
-    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-        return json.load(response)
+def get_json(url: str, attempts: int = 3) -> object:
+    """GET JSON with short retries for transient TLS/CDN failures."""
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 Chrome/124 content-workbench/1.0"},
+    )
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+                return json.load(response)
+        except (
+            urllib.error.URLError,
+            urllib.error.HTTPError,
+            TimeoutError,
+            OSError,
+            json.JSONDecodeError,
+        ) as exc:
+            last_error = exc
+            if attempt < attempts:
+                time.sleep(attempt)
+    assert last_error is not None
+    raise last_error
 
 
-def get_bytes(url: str) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "content-workbench/1.0"})
-    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-        return response.read()
+def get_bytes(url: str, attempts: int = 3) -> bytes:
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 Chrome/124 content-workbench/1.0"},
+    )
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+                return response.read()
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as exc:
+            last_error = exc
+            if attempt < attempts:
+                time.sleep(attempt)
+    assert last_error is not None
+    raise last_error
 
 
 # ---------------------------------------------------------------------------
@@ -160,11 +192,165 @@ def fetch_rss(config: dict) -> list[dict]:
     return [item for item in items if item["title"]]
 
 
-ADAPTERS = {"hackernews": fetch_hackernews, "github": fetch_github, "rss": fetch_rss}
+def fetch_aihot(config: dict) -> list[dict]:
+    """抓 AIHOT all + selected，并按 id/url/title 合并去重。"""
+    base_url = (config.get("base_url") or "https://aihot.virxact.com").rstrip("/")
+    modes = config.get("modes") or ["all", "selected"]
+    if not isinstance(modes, list) or not modes:
+        raise ValueError("aihot 源的 modes 必须是非空数组")
+    takes = config.get("takes") or {"all": 100, "selected": 50}
+    excerpt_limit = int(config.get("excerpt_limit", 1000))
+
+    merged: dict[str, dict] = {}
+    order: list[str] = []
+    for mode in modes:
+        take = int(takes.get(mode, config.get("limit", 100)))
+        payload = get_json(f"{base_url}/api/public/items?mode={urllib.parse.quote(str(mode))}&take={take}")
+        if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+            raise ValueError(f"AIHOT {mode} 返回结构缺少 items 数组")
+        for raw in payload["items"]:
+            if not isinstance(raw, dict):
+                continue
+            key = str(raw.get("id") or raw.get("url") or raw.get("title") or "").strip()
+            if not key:
+                continue
+            if key not in merged:
+                order.append(key)
+            previous = merged.get(key, {})
+            merged[key] = {
+                **previous,
+                **raw,
+                "selected": bool(previous.get("selected") or raw.get("selected") or mode == "selected"),
+            }
+
+    items: list[dict] = []
+    for key in order:
+        raw = merged[key]
+        title = one_line(raw.get("title") or raw.get("title_en") or "", 160)
+        url = raw.get("url") or raw.get("permalink") or ""
+        if not title or not url:
+            continue
+        score = raw.get("score") or 0
+        source = one_line(raw.get("source") or "原始源未标注", 180)
+        items.append({
+            "title": title,
+            "excerpt": one_line(raw.get("summary") or raw.get("title_en") or "", excerpt_limit),
+            "source": f"AI HOT · {source}",
+            "metrics": f"aihot score {score}",
+            "url": url,
+            "created_at": raw.get("publishedAt") or raw.get("discoveredAt") or "",
+            "category": raw.get("category") or "",
+            "selected": bool(raw.get("selected")),
+        })
+    return items
+
+
+def fetch_follow_builders(config: dict) -> list[dict]:
+    """抓 Zara Zhang 维护的 follow-builders 公开 JSON feed。"""
+    feed = str(config.get("feed") or "x")
+    if feed not in {"x", "blogs", "podcasts"}:
+        raise ValueError("follow-builders feed 只支持 x / blogs / podcasts")
+    base_url = (
+        config.get("base_url")
+        or "https://raw.githubusercontent.com/zarazhangrui/follow-builders/main"
+    ).rstrip("/")
+    url = config.get("url") or f"{base_url}/feed-{feed}.json"
+    payload = get_json(url)
+    if not isinstance(payload, dict):
+        raise ValueError(f"follow-builders {feed} 返回值不是对象")
+    limit = int(config.get("limit", 50))
+    excerpt_limit = int(config.get("excerpt_limit", 1000))
+    items: list[dict] = []
+
+    if feed == "x":
+        authors = payload.get("x")
+        if not isinstance(authors, list):
+            raise ValueError("follow-builders X 返回结构缺少 x 数组")
+        for author in authors:
+            if not isinstance(author, dict):
+                continue
+            name = one_line(author.get("name") or author.get("handle") or "Unknown", 80)
+            handle = one_line(author.get("handle") or "", 80)
+            for tweet in author.get("tweets") or []:
+                if not isinstance(tweet, dict):
+                    continue
+                text = one_line(tweet.get("text") or "", excerpt_limit)
+                url = tweet.get("url") or ""
+                if not text or not url:
+                    continue
+                likes = int(tweet.get("likes") or 0)
+                retweets = int(tweet.get("retweets") or 0)
+                replies = int(tweet.get("replies") or 0)
+                items.append({
+                    "title": one_line(text, 120),
+                    "excerpt": text,
+                    "source": f"follow-builders · X：{name}" + (f" (@{handle})" if handle else ""),
+                    "metrics": f"{likes} likes / {retweets} RT / {replies} replies",
+                    "url": url,
+                    "created_at": tweet.get("createdAt") or "",
+                    "category": "builder",
+                    "_rank": likes + retweets * 2 + replies,
+                })
+        items.sort(key=lambda item: item.get("_rank", 0), reverse=True)
+    else:
+        entries = payload.get(feed)
+        if not isinstance(entries, list):
+            raise ValueError(f"follow-builders {feed} 返回结构缺少 {feed} 数组")
+        kind = "Blog" if feed == "blogs" else "Podcast"
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            title = one_line(entry.get("title") or "", 160)
+            url = entry.get("url") or entry.get("link") or ""
+            if not title or not url:
+                continue
+            original = (
+                entry.get("summary")
+                or entry.get("description")
+                or entry.get("transcript")
+                or title
+            )
+            author = one_line(entry.get("author") or entry.get("name") or entry.get("source") or kind, 100)
+            items.append({
+                "title": title,
+                "excerpt": one_line(original, excerpt_limit),
+                "source": f"follow-builders · {kind}：{author}",
+                "metrics": "",
+                "url": url,
+                "created_at": entry.get("publishedAt") or entry.get("published_at") or entry.get("date") or "",
+                "category": "builder",
+            })
+
+    for item in items:
+        item.pop("_rank", None)
+    return items[:limit]
+
+
+ADAPTERS = {
+    "aihot": fetch_aihot,
+    "follow-builders": fetch_follow_builders,
+    "hackernews": fetch_hackernews,
+    "github": fetch_github,
+    "rss": fetch_rss,
+}
 
 BUILTIN_SOURCES = [
-    {"id": "hackernews", "type": "hackernews", "label": "Hacker News 首页", "limit": 20, "enabled": True},
-    {"id": "github", "type": "github", "label": "GitHub 新星项目", "limit": 15, "days": 7, "enabled": True},
+    {
+        "id": "aihot",
+        "type": "aihot",
+        "label": "AI HOT（all + selected 合并去重）",
+        "modes": ["all", "selected"],
+        "takes": {"all": 100, "selected": 50},
+        "enabled": True,
+    },
+    {
+        "id": "follow-builders-x",
+        "type": "follow-builders",
+        "feed": "x",
+        "label": "follow-builders · X",
+        "limit": 50,
+        "enabled": True,
+    },
 ]
 
 
@@ -202,7 +388,12 @@ def render_full_section(groups: list[tuple[str, list[dict]]], failures: list[str
         parts.append(f"> [!note]- {label}（{len(items)} 条）")
         parts.append(">")
         for index, item in enumerate(items, start=1):
-            parts.append(f"> {index}. {item['title']}")
+            title = item["title"]
+            if item.get("selected"):
+                title = "✅ " + title
+            if item.get("category"):
+                title += f" `{item['category']}`"
+            parts.append(f"> {index}. {title}")
             if item.get("excerpt"):
                 parts.append(f"> - 原文：{item['excerpt']}")
             parts.append(f"> - 来源：{item['source']}")
@@ -309,7 +500,16 @@ def main(argv: list[str] | None = None) -> int:
             config["limit"] = args.limit
         try:
             items = adapter(config)
-        except (urllib.error.URLError, urllib.error.HTTPError, ValueError, ElementTree.ParseError, OSError) as exc:
+        except (
+            urllib.error.URLError,
+            urllib.error.HTTPError,
+            ValueError,
+            TypeError,
+            KeyError,
+            RuntimeError,
+            ElementTree.ParseError,
+            OSError,
+        ) as exc:
             failures.append(f"{label}：抓取失败（{type(exc).__name__}: {exc}）")
             print(f"⚠️  {label} 抓取失败：{exc}", file=sys.stderr)
             continue
