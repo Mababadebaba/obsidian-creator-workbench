@@ -27,8 +27,8 @@
  *     RX = 面板宽/2 - 卡宽/2 - 24（resize 防抖重算，侧卡贴近面板左右缘）。
  *     z-index 按 cos δ 排；|δ|>128° 的卡 opacity:0 + pointer-events:none 藏到弧后。
  *     自动巡航，hover/拖拽暂停；拖拽 θ+=dx*0.35 带惯性；
- *     Alt+滚轮缩放 rotor translateZ clamp(-240..160)；点击非正面卡最短路径 600ms 转正面加 .is-front；
- *     点击已在正面的卡（|δ|<18°）或平铺模式下点任意卡 → 由该卡向上冒泡派发
+ *     Alt+滚轮缩放 rotor translateZ clamp(-240..160)；点击任意可见卡片都直接打开详情，
+ *     不再要求侧卡先转正、再点第二次；由该卡向上冒泡派发
  *     CustomEvent('wbfx:ringactivate', {detail:{index}})，页面侧接管“放大看详情”；
  *     卡片带 tabindex=0/role=button，Enter/空格 等效点击；
  *     每帧写各卡 --away=(1-cos δ)/2 内联 CSS 变量。容器内按钮：
@@ -705,7 +705,7 @@
         theta: 0, vel: 0, zoom: 0,
         cruise: parseFloat(container.getAttribute('data-cruise')),
         cruising: !reduced,
-        hover: false, dragging: false, grid: false,
+        hover: false, pressing: false, dragging: false, grid: false, detailOpen: false,
         spin: null,           /* {from,to,start,dur} 点击转正面动画 */
         RX: 300               /* 浅弧横向半径：侧卡中心到面板中心的水平距离 */
       };
@@ -779,54 +779,91 @@
       listen(container, 'pointerleave', function () { state.hover = false; });
 
       /* 拖拽 */
-      var drag = { on: false, lastX: 0, moved: 0, id: 0 };
+      var DRAG_THRESHOLD = 10;
+      var drag = {
+        on: false, lastX: 0, moved: 0, id: 0,
+        cardIndex: -1, captured: false
+      };
       listen(stage, 'pointerdown', function (e) {
         if (state.grid) return;
-        drag.on = true; drag.lastX = e.clientX; drag.moved = 0; drag.id = e.pointerId;
-        state.dragging = true; state.vel = 0; state.spin = null;
-        try { stage.setPointerCapture(e.pointerId); } catch (err) {}
+        var pressedCard = e.target.closest ? e.target.closest('.ring-card') : null;
+        drag.on = true;
+        drag.lastX = e.clientX;
+        drag.moved = 0;
+        drag.id = e.pointerId;
+        drag.cardIndex = pressedCard ? cards.indexOf(pressedCard) : -1;
+        drag.captured = false;
+        state.pressing = true;
+        state.dragging = false;
+        state.vel = 0;
+        state.spin = null;
       });
       listen(stage, 'pointermove', function (e) {
         if (!drag.on || state.grid) return;
         var dx = e.clientX - drag.lastX;
         drag.lastX = e.clientX;
         drag.moved += Math.abs(dx);
+        /* 真实鼠标/触控板点击会有 1-8px 抖动。超过阈值后才进入拖拽并捕获指针，
+           否则 pointerup 仍按 pointerdown 时保存的卡片目标执行点击。 */
+        if (!state.dragging) {
+          if (drag.moved < DRAG_THRESHOLD) return;
+          state.dragging = true;
+          try {
+            stage.setPointerCapture(e.pointerId);
+            drag.captured = true;
+          } catch (err) {}
+        }
         state.theta += dx * 0.35;
         state.vel = dx * 0.35 * 60;    /* 换算为 度/秒 */
         if (reduced) render();
       });
-      /* 卡片 δ（wrap±180）：|δ|<18° 视为“已在正面” */
-      function deltaOf(idx) {
-        return ((idx * step + state.theta) % 360 + 540) % 360 - 180;
-      }
-
       /* 激活 = “放大看详情”：由该卡向上冒泡派发，页面侧监听接管 */
       function activateCard(idx) {
+        state.detailOpen = true;
+        cards.forEach(function (card, cardIndex) {
+          card.classList.toggle('is-detail-source', cardIndex === idx);
+          card.setAttribute('aria-expanded', cardIndex === idx ? 'true' : 'false');
+        });
         try {
           cards[idx].dispatchEvent(new CustomEvent('wbfx:ringactivate',
             { bubbles: true, detail: { index: idx } }));
         } catch (err) { /* 老引擎无 CustomEvent 构造器时静默 */ }
       }
 
-      /* 环模式点击语义：正面卡 → 激活；非正面卡 → 转正面 */
+      /* 两种模式统一为一次点击直接打开；卡片的当前视觉位置交给页面侧做 FLIP。 */
       function tapCard(idx) {
-        if (Math.abs(deltaOf(idx)) < 18) activateCard(idx);
-        else spinToFront(idx);
+        activateCard(idx);
       }
+
+      /* 详情关闭后再恢复巡航。打开期间冻结弧环，确保关闭动画能滑回原卡位置。 */
+      listen(document, 'wbfx:ringclose', function () {
+        state.detailOpen = false;
+        cards.forEach(function (card) {
+          card.classList.remove('is-detail-source');
+          card.setAttribute('aria-expanded', 'false');
+        });
+      });
 
       function endDrag(e) {
         if (!drag.on) return;
+        var wasDragging = state.dragging || drag.moved >= DRAG_THRESHOLD;
+        var pressedIndex = drag.cardIndex;
         drag.on = false;
+        state.pressing = false;
         state.dragging = false;
-        try { stage.releasePointerCapture(drag.id); } catch (err) {}
-        if (drag.moved < 6 && e && e.target) {
-          var card = e.target.closest ? e.target.closest('.ring-card') : null;
-          if (card && cards.indexOf(card) >= 0) tapCard(cards.indexOf(card));
+        if (drag.captured) {
+          try { stage.releasePointerCapture(drag.id); } catch (err) {}
         }
+        drag.captured = false;
+        /* 不再依赖 pointerup.target：pointer capture 在不同浏览器里可能把它改成 stage。 */
+        if (!wasDragging && pressedIndex >= 0) tapCard(pressedIndex);
       }
       listen(stage, 'pointerup', endDrag);
       listen(stage, 'pointercancel', function () {
-        drag.on = false; state.dragging = false;
+        drag.on = false;
+        drag.captured = false;
+        state.pressing = false;
+        state.dragging = false;
       });
 
       /* 平铺模式点击：pointerdown 在 grid 下早退不走拖拽通道，
@@ -839,7 +876,7 @@
         if (idx >= 0) activateCard(idx);
       });
 
-      /* 键盘可达：Enter/空格 等效点击（环模式=正面激活/侧卡转正；平铺=直接激活） */
+      /* 键盘可达：Enter/空格在两种模式下都一次打开详情。 */
       listen(container, 'keydown', function (e) {
         if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
         var card = e.target && e.target.closest ?
@@ -848,8 +885,7 @@
         var idx = cards.indexOf(card);
         if (idx < 0) return;
         e.preventDefault();
-        if (state.grid) activateCard(idx);
-        else tapCard(idx);
+        activateCard(idx);
       });
 
       /* 滚轮缩放：仅 Alt+滚轮生效，普通滚动直接放行不劫持整页 */
@@ -860,24 +896,6 @@
         state.zoom = clamp(state.zoom - e.deltaY * 0.25, -240, 160);
         if (reduced) render();
       }, { passive: false });
-
-      /* 点击某卡 → 最短路径转到正面 */
-      function spinToFront(idx) {
-        var target = -idx * step;
-        var delta = ((target - state.theta) % 360 + 540) % 360 - 180;
-        for (var i = 0; i < N; i++) cards[i].classList.remove('is-front');
-        cards[idx].classList.add('is-front');
-        if (reduced) {
-          state.theta += delta;
-          render();
-          return;
-        }
-        state.spin = {
-          from: state.theta, to: state.theta + delta,
-          t: 0, dur: 0.6
-        };
-        state.vel = 0;
-      }
 
       /* 控制按钮 */
       var btnCruise = container.querySelector('[data-ring-action="cruise"]');
@@ -964,14 +982,14 @@
 
       if (!reduced) {
         onDispose(ticker.add(function (dt) {
-          if (state.grid || !visible) return;
+          if (state.grid || state.detailOpen || !visible) return;
           if (state.spin) {
             state.spin.t += dt;
             var k = clamp(state.spin.t / state.spin.dur, 0, 1);
             state.theta = state.spin.from +
               (state.spin.to - state.spin.from) * easeInOutCubic(k);
             if (k >= 1) state.spin = null;
-          } else if (state.dragging) {
+          } else if (state.dragging || state.pressing) {
             /* θ 已在 pointermove 中更新 */
           } else {
             if (Math.abs(state.vel) > 0.5) {
@@ -994,8 +1012,10 @@
           if (savedStyles[i] === null) cards[i].removeAttribute('style');
           else cards[i].setAttribute('style', savedStyles[i]);
           cards[i].classList.remove('is-front');
+          cards[i].classList.remove('is-detail-source');
           cards[i].removeAttribute('tabindex');
           cards[i].removeAttribute('role');
+          cards[i].removeAttribute('aria-expanded');
         }
         container.classList.remove('ring-as-grid');
         if (stage.parentNode) stage.parentNode.removeChild(stage);

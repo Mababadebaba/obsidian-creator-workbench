@@ -643,6 +643,7 @@ def parse_radar(path: Path, warnings: list[str]) -> dict[str, Any]:
         nonlocal current_signal
         if current_signal:
             source_lines = current_signal.pop("_source_lines", [])
+            current_signal.pop("_active_text_key", None)
             if not current_signal.get("source"):
                 current_signal["source"] = "；".join(clean_markdown(line) for line in source_lines if line)
             metrics = current_signal.get("metrics") or parse_radar_metrics(current_signal.get("source", ""))
@@ -699,10 +700,12 @@ def parse_radar(path: Path, warnings: list[str]) -> dict[str, Any]:
                 "angle": "",
                 "hook": "",
                 "excerpt": "",
+                "original_text": "",
                 "url": "",
                 "source": "",
                 "metrics": {},
                 "_source_lines": [],
+                "_active_text_key": "",
             }
             continue
 
@@ -712,22 +715,39 @@ def parse_radar(path: Path, warnings: list[str]) -> dict[str, Any]:
                 continue
             if cleaned.startswith("- "):
                 current_signal["_source_lines"].append(cleaned[2:])
-            field = re.match(r"^\*\*(原文|来源|互动|热度|链接)\*\*[:：]\s*(.+)$", cleaned)
+            field = re.match(r"^\*\*(原文|中文导读|英文原文|来源|互动|热度|链接)\*\*[:：]\s*(.+)$", cleaned)
             if field:
                 key = field.group(1)
                 value = clean_markdown(field.group(2))
-                if key == "原文":
+                if key in {"原文", "中文导读"}:
                     current_signal["excerpt"] = value
+                    current_signal["_active_text_key"] = "excerpt" if key == "原文" else ""
+                elif key == "英文原文":
+                    current_signal["original_text"] = value
+                    current_signal["_active_text_key"] = "original_text"
                 elif key == "来源":
                     current_signal["source"] = value
+                    current_signal["_active_text_key"] = ""
                 elif key in {"互动", "热度"}:
                     current_signal["metrics"] = parse_radar_metrics(value)
+                    current_signal["_active_text_key"] = ""
                 elif key == "链接":
                     current_signal["url"] = value.strip("<>")
+                    current_signal["_active_text_key"] = ""
+                continue
             if "你要讲的角度" in cleaned:
+                current_signal["_active_text_key"] = ""
                 current_signal["angle"] = clean_markdown(cleaned.split("➜", 1)[-1])
+                continue
             if "钩子" in cleaned:
+                current_signal["_active_text_key"] = ""
                 current_signal["hook"] = clean_markdown(cleaned.split("：", 1)[-1])
+                continue
+            active_text_key = current_signal.get("_active_text_key")
+            if active_text_key and cleaned:
+                current_signal[active_text_key] = (
+                    f"{current_signal.get(active_text_key, '')}\n{clean_markdown(cleaned)}"
+                ).strip()
             continue
 
         if in_full:
@@ -756,19 +776,22 @@ def parse_radar(path: Path, warnings: list[str]) -> dict[str, Any]:
                     "category": category_text,
                     "selected": "✅" in item.group("text"),
                     "excerpt": "",
+                    "original_text": "",
                     "url": "",
                     "source": "",
                     "metrics": {},
                 }
                 continue
             if current_fetch:
-                field = re.match(r"^>\s*-\s*(原文|来源|互动|热度|链接|时间)[:：]\s*(.+)$", line)
-                field = field or re.match(r"^>\s{3,}-\s*(原文|来源|互动|热度|链接|时间)[:：]\s*(.+)$", line)
+                field = re.match(r"^>\s*-\s*(原文|中文导读|英文原文|来源|互动|热度|链接|时间)[:：]\s*(.+)$", line)
+                field = field or re.match(r"^>\s{3,}-\s*(原文|中文导读|英文原文|来源|互动|热度|链接|时间)[:：]\s*(.+)$", line)
                 if field:
                     key = field.group(1)
                     value = clean_markdown(field.group(2))
-                    if key == "原文":
+                    if key in {"原文", "中文导读"}:
                         current_fetch["excerpt"] = value
+                    elif key == "英文原文":
+                        current_fetch["original_text"] = value
                     elif key == "来源":
                         current_fetch["source"] = value
                     elif key in {"互动", "热度"}:
@@ -1263,6 +1286,112 @@ def parse_methodology(root: Path, warnings: list[str]) -> dict[str, Any]:
     }
 
 
+def latest_table_value(row: dict[str, str], header: list[str]) -> str:
+    """Return the newest non-empty metric value from a 24h/7d-style row."""
+    for key in reversed(header[1:]):
+        value = clean_markdown(row.get(key))
+        if value and value not in {"—", "-", "待填充"}:
+            return value
+    return ""
+
+
+def statistics_metric(metrics: dict[str, str], *labels: str, contains: bool = False) -> float | None:
+    for key, value in metrics.items():
+        matched = any(label in key for label in labels) if contains else key in labels
+        if matched:
+            return parse_number(value)
+    return None
+
+
+def parse_statistics_records(path: Path, warnings: list[str]) -> list[dict[str, Any]]:
+    """Parse real published metrics maintained in 04-数据统计/数据统计表.md."""
+    text = read_text(path, warnings)
+    if not text:
+        return []
+    _, body = parse_front_matter(text)
+    # The file starts with a fenced Markdown template containing its own
+    # `### [[内容标题]]`; templates are instructions, never published records.
+    body = re.sub(r"```.*?```", "", body, flags=re.S)
+    headings = list(re.finditer(r"^###\s+(.+)$", body, re.M))
+    items: list[dict[str, Any]] = []
+
+    for index, heading in enumerate(headings):
+        title = clean_markdown(heading.group(1))
+        section_end = headings[index + 1].start() if index + 1 < len(headings) else len(body)
+        section = body[heading.end() : section_end]
+        fields: dict[str, str] = {}
+        for raw_line in section.splitlines():
+            match = re.match(r"^-\s*([^：:]+)[：:]\s*(.*)$", raw_line.strip())
+            if match:
+                fields[clean_markdown(match.group(1))] = clean_markdown(match.group(2))
+
+        metrics: dict[str, str] = {}
+        for _, header, rows in iter_tables_by_section(section):
+            if not header or clean_markdown(header[0]) != "指标":
+                continue
+            for row in rows:
+                label = clean_markdown(row.get(header[0]))
+                if label:
+                    metrics[label] = latest_table_value(row, header)
+
+        views = statistics_metric(metrics, "播放量", "播放量/浏览量", "浏览量")
+        likes = statistics_metric(metrics, "点赞")
+        comments = statistics_metric(metrics, "评论")
+        shares = statistics_metric(metrics, "转发", "转发/分享", "分享")
+        saves = statistics_metric(metrics, "收藏")
+        completion_rate = statistics_metric(metrics, "完播率")
+        drop_rate = statistics_metric(metrics, "跳出率", contains=True)
+        avg_watch_seconds = statistics_metric(metrics, "平均播放时长", "平均观看秒数", contains=True)
+        like_rate = (likes / views * 100.0) if likes is not None and views else None
+        raw_publish_date = fields.get("发布日期", "")
+        date_match = re.search(r"\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2})?", raw_publish_date)
+        publish_date = date_match.group(0) if date_match else clean_markdown(raw_publish_date)
+        content_type = normalize_type(fields.get("内容类型轮播") or fields.get("选题类型"))
+        predicted = clean_markdown(fields.get("预测"))
+
+        items.append(
+            {
+                "title": title,
+                "platform": clean_markdown(fields.get("平台")) or "未回填",
+                "type": content_type,
+                "publish_date": publish_date,
+                "published_at": publish_date,
+                "views": int(views) if views is not None else None,
+                "likes": int(likes) if likes is not None else None,
+                "comments": int(comments) if comments is not None else None,
+                "shares": int(shares) if shares is not None else None,
+                "saves": int(saves) if saves is not None else None,
+                "completion_rate": round(completion_rate, 2) if completion_rate is not None else None,
+                "drop_rate": round(drop_rate, 2) if drop_rate is not None else None,
+                "avg_watch_seconds": round(avg_watch_seconds, 2) if avg_watch_seconds is not None else None,
+                "like_rate": round(like_rate, 2) if like_rate is not None else None,
+                "predicted_tier": predicted or "N/A（无发布前盲预测）",
+                "actual_tier": f"{int(views):,} 播放" if views is not None else "未回填",
+                "link": fields.get("链接", "") if fields.get("链接", "").startswith("http") else "",
+                "data_source": "04-数据统计/数据统计表.md",
+                "path": str(path.relative_to(path.parents[1])),
+            }
+        )
+    return items
+
+
+def merge_published_items(primary: list[dict[str, Any]], fallback: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge by normalized title; 03 files win and 04 fills their missing fields."""
+    merged = list(primary)
+    by_title = {normalize_title_key(item.get("title")): item for item in merged}
+    for candidate in fallback:
+        key = normalize_title_key(candidate.get("title"))
+        existing = by_title.get(key)
+        if existing is None:
+            merged.append(candidate)
+            by_title[key] = candidate
+            continue
+        for field, value in candidate.items():
+            if existing.get(field) in {None, "", "未分类", "未回填"} and value not in {None, "", "未分类"}:
+                existing[field] = value
+    return merged
+
+
 def parse_published(root: Path, warnings: list[str]) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     if not root.exists():
@@ -1316,6 +1445,10 @@ def parse_published(root: Path, warnings: list[str]) -> dict[str, Any]:
                 }
             )
 
+    statistics_path = root.parent / "04-数据统计" / "数据统计表.md"
+    statistics_items = parse_statistics_records(statistics_path, warnings)
+    items = merge_published_items(items, statistics_items)
+
     type_values: defaultdict[str, list[int]] = defaultdict(list)
     type_completion: defaultdict[str, list[float]] = defaultdict(list)
     type_drop: defaultdict[str, list[float]] = defaultdict(list)
@@ -1354,6 +1487,7 @@ def parse_published(root: Path, warnings: list[str]) -> dict[str, Any]:
     total_likes = sum(item.get("likes") or 0 for item in items)
     completion_values = [item["completion_rate"] for item in items if item.get("completion_rate") is not None]
     drop_values = [item["drop_rate"] for item in items if item.get("drop_rate") is not None]
+    like_rate_values = [item for item in items if item.get("likes") is not None and item.get("views")]
     type_medians = []
     for key, value in sorted(medians.items(), key=lambda pair: pair[1], reverse=True):
         views_for_rate = type_views_for_rate.get(key, 0)
@@ -1381,6 +1515,10 @@ def parse_published(root: Path, warnings: list[str]) -> dict[str, Any]:
             "avg_like_rate": avg_like_rate,
             "leading_type": leading_type,
             "prediction_accuracy": None,
+            "completion_sample_count": len(completion_values),
+            "drop_sample_count": len(drop_values),
+            "like_sample_count": len(like_rate_values),
+            "data_sources": ["03-已发布内容", "04-数据统计/数据统计表.md"],
         },
         "type_medians": type_medians,
         "weekly_series": weekly_series,
@@ -3212,6 +3350,7 @@ DBS_SKILLS = [
     {"cat": "定位与战略", "name": "dbs-decision", "trigger": "/dbs-decision · /决策立案", "desc": "把任何长期领域做成四层结构的本地决策工程"},
     {"cat": "内容创作", "name": "dbs-resonate", "trigger": "/dbs-resonate · 「这稿有没有戳中人」", "desc": "文稿共鸣诊断：传播心理学框架定位问题 + 给改法（本地已装）"},
     {"cat": "内容创作", "name": "dbs-content", "trigger": "/dbs-content · 「这个内容怎么做」", "desc": "选题通过后诊断怎么做成好内容（本地已装）"},
+    {"cat": "内容创作", "name": "dbs-voice", "trigger": "/dbs-voice · 「这稿不像我」", "desc": "从真实口播建立个人声纹，诊断并重写成自然说出口的版本"},
     {"cat": "内容创作", "name": "dbs-hook", "trigger": "/dbs-hook · 「帮我优化开头」", "desc": "短视频开头诊断 + 优化方案"},
     {"cat": "内容创作", "name": "dbs-xhs-title", "trigger": "/dbs-xhs-title · 「起个小红书标题」", "desc": "75 个验证过的爆款标题公式，挑对的用对的"},
     {"cat": "内容创作", "name": "dbs-ai-check", "trigger": "/dbs-ai-check · 「有没有 AI 味」", "desc": "扫描 AI 生成痕迹，只诊断不改（本地已装）"},

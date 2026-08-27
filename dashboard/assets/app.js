@@ -87,6 +87,10 @@
     return /follow-builders/i.test(`${item.group || ""} ${item.source || ""}`);
   }
 
+  function hasChinese(text) {
+    return /[\u3400-\u9fff]/.test(String(text || ""));
+  }
+
   function builderDigest(text) {
     const raw = String(text || "");
     const lower = raw.toLowerCase();
@@ -117,13 +121,15 @@
   }
 
   function localizedFetchTitle(item = {}) {
-    if (!isBuilderSource(item)) return item.text || "未命名条目";
-    return shortText(builderDigest(item.excerpt || item.text), 58);
+    const direct = item.title || item.text || "未命名条目";
+    if (!isBuilderSource(item) || hasChinese(direct)) return direct;
+    return shortText(builderDigest(item.excerpt || item.original_text || direct), 58);
   }
 
   function localizedFetchExcerpt(item = {}) {
     if (!isBuilderSource(item)) return item.excerpt || item.text || "—";
-    return builderDigest(item.excerpt || item.text);
+    if (hasChinese(item.excerpt)) return item.excerpt;
+    return builderDigest(item.original_text || item.excerpt || item.text);
   }
 
   function typeColor(type) {
@@ -393,25 +399,14 @@
     return numberOrNull(item[key]);
   }
 
-  // 真实数据为空时用的模拟序列（带「模拟数据」标），发布后自动被真实 items 替换
-  const VIDEO_MOCK = {
-    views: [3200, 5500, 4400, 7800, 6200, 9000, 8000],
-    completion_rate: [42, 55, 48, 63, 58, 71, 66],
-    drop_rate: [58, 45, 52, 37, 42, 29, 34],
-    like_rate: [3.2, 4.1, 3.6, 5.4, 4.8, 6.2, 5.6]
-  };
-
   function videoSeriesChart(items, metricKey, options = {}) {
     const metric = VIDEO_METRICS.find(item => item.key === metricKey) || VIDEO_METRICS[0];
     const large = Boolean(options.large);
     let rows = (items || [])
       .map((item, index) => ({ item, index, value: videoMetricValue(item, metric.key) }))
       .filter(row => row.value !== null);
-    let mocked = false;
     if (!rows.length) {
-      mocked = true;
-      rows = (VIDEO_MOCK[metric.key] || VIDEO_MOCK.views)
-        .map((value, index) => ({ item: null, index, value }));
+      return emptyState(`暂无真实${metric.label}`, "在 04-数据统计/数据统计表.md 回填后显示；本页不使用模拟走势。");
     }
     const width = options.width || 520;
     const height = options.height || 180;
@@ -448,8 +443,7 @@
         ${fillPath ? `<path d="${fillPath}" fill="url(#videoArea-${metric.key})"/>` : ""}
         <polyline points="${points}" pathLength="1" fill="none" stroke="var(--amber)" stroke-width="${large ? 3.6 : 2.5}" stroke-linecap="round" stroke-linejoin="round" class="glow-line"/>
         ${circles}
-        <text x="${left}" y="${height - 2}" fill="var(--faint)" font-size="${large ? 11 : 9.5}" font-family="var(--han)">${mocked ? "示意走势 · 发布后自动换真实数据" : "按发布顺序 · 每个点 = 一条视频"}</text>
-        ${mocked ? `<g transform="translate(${width - right - (large ? 90 : 64)}, ${top - (large ? 28 : 14)})"><rect x="0" y="0" rx="8" ry="8" width="${large ? 90 : 64}" height="${large ? 24 : 17}" fill="rgba(255,122,69,.14)" stroke="rgba(255,122,69,.4)"/><text x="${large ? 45 : 32}" y="${large ? 16 : 12}" text-anchor="middle" fill="var(--amber2)" font-size="${large ? 12 : 10}" font-family="var(--han)">模拟数据</text></g>` : ""}
+        <text x="${left}" y="${height - 2}" fill="var(--faint)" font-size="${large ? 11 : 9.5}" font-family="var(--han)">按发布顺序 · 每个点 = 一条真实视频</text>
       </svg>
     `;
   }
@@ -704,7 +698,6 @@
     const ideas = data.ideas?.items || [];
 
     const buffer = Number(global.buffer_count || 0);
-    const sources = Array.isArray(global.signal_sources) ? global.signal_sources.length : 0;
     const samples = Number(global.calibration_samples ?? state.calibration_samples ?? 0);
     const publishedCount = Number(summary.published_count || 0);
     const published = publishedCount > 0;
@@ -718,15 +711,20 @@
     const pendingRetros = Array.isArray(state.pending_retros) ? state.pending_retros.length : 0;
     const baseline = numberOrNull(cheat.baseline_plays ?? state.baseline_plays);
     const totalViews = numberOrNull(summary.total_views) || 0;
+    const automaticSources = (global.signal_sources || []).filter(source => source !== "manual-paste").length;
+    const latestDataAt = state.last_trends_run_at || global.generated_at || "";
+    const latestDataLabel = latestDataAt
+      ? String(latestDataAt).replace("T", " ").slice(5, 16)
+      : "待刷新";
     const mount = (selector, html) => { const node = $(selector); if (node) node.innerHTML = html; };
 
     mount("#v6-topbar", `
       <div class="v6-brand">内容工作台 <span>/ CONTENT WORKBENCH</span></div>
-      <div class="v6-topmeta">${esc(global.today || "—")} · ${esc(global.stage || "—")}</div>
+      <div class="v6-topmeta">${esc(global.today || "—")} · ${esc(global.stage || "—")} <b>热点更新 ${esc(latestDataLabel)}</b></div>
       <div class="v6-topspacer"></div>
       <span class="v6-chip ${buffer <= 0 ? "v6-chip-alert" : ""}">BUFFER ${buffer}${buffer <= 0 ? " · 可能断更" : " · 库存正常"}</span>
       <span class="v6-chip">RUBRIC ${esc(rubric)}</span>
-      <span class="v6-chip"><i class="v6-dot"></i>${sources} 源在线</span>
+      <span class="v6-chip"><i class="v6-dot"></i>${automaticSources} 自动源 · ${esc(latestDataLabel)}</span>
     `);
 
     const roCard = (card) => `
@@ -787,10 +785,11 @@
       const angle = shortText(String(signal.angle || signal.hook || "").replace(/^你要讲的角度[:：]\s*/, ""), 62) || "—";
       const source = shortText(String(signal.source || "信号").split("；")[0], 22);
       const likes = numberOrNull(signal.likes);
+      const title = isBuilderSource(signal) ? localizedFetchTitle(signal) : (signal.title || "未命名信号");
       return `
         <article class="ring-card v6-sig ${sigTypeClass(signal.type)}" style="--c:${typeColor(signal.type)}">
           <div class="v6-sig-top"><span class="v6-sig-k">${esc(typeShort(signal.type))} ${String(index + 1).padStart(2, "0")}</span>${signal.tier ? `<span class="v6-sig-tier">${esc(signal.tier)}</span>` : ""}</div>
-          <div class="v6-sig-t">${esc(signal.title || "未命名信号")}</div>
+          <div class="v6-sig-t">${esc(title)}</div>
           <div class="v6-sig-a">${esc(angle)}</div>
           <div class="v6-sig-s"><span>${esc(source)}</span><span>${likes ? `❤ ${formatNumber(likes)}` : "雷达在线"}</span></div>
         </article>`;
@@ -810,7 +809,7 @@
               <button type="button" data-ring-action="cruise" aria-pressed="true">自动巡航</button>
               <button type="button" data-ring-action="reset">复位</button>
               <button type="button" data-ring-action="grid">平铺</button>
-              <span class="v6-ring-hint">拖拽旋转 · Alt+滚轮缩放 · 点卡聚焦 · 再点放大</span>
+              <span class="v6-ring-hint">点任意卡直接打开 · 拖拽旋转 · Alt+滚轮缩放</span>
             </div>
           </div>
           <aside class="v6-float-stat" aria-hidden="true">
@@ -909,16 +908,70 @@
       </div>
     `);
 
-    /* ── 信号详情 modal（“放大”）──
-       effects.js 环卡在“正面卡再点一下”或平铺模式下点任意卡时，
-       冒泡派发 wbfx:ringactivate{index}；这里按 index 取 radar.signals 渲染。
-       复用全局 .doc-modal 骨架与 openModalShell/closeModalShell（240ms 开合），
-       不碰 cheat/library 页各自的 modal。 */
-    const openSigModal = (signal, index) => {
+    /* ── 信号详情 shared-element modal ──
+       环卡与平铺卡都一次点击打开。面板用 FLIP 从被点卡片的当前屏幕位置滑出，
+       关闭时沿原路径缩回；打开期间 effects.js 冻结巡航，避免目标位置漂移。 */
+    let sigModalSource = null;
+    let sigModalAnimation = null;
+    let sigModalCloseTimer = 0;
+    const sigReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const sigTransformBetween = (sourceRect, panelRect) => {
+      const sourceX = sourceRect.left + sourceRect.width / 2;
+      const sourceY = sourceRect.top + sourceRect.height / 2;
+      const panelX = panelRect.left + panelRect.width / 2;
+      const panelY = panelRect.top + panelRect.height / 2;
+      const scaleX = Math.max(0.18, Math.min(1.15, sourceRect.width / panelRect.width));
+      const scaleY = Math.max(0.18, Math.min(1.15, sourceRect.height / panelRect.height));
+      return `translate3d(${(sourceX - panelX).toFixed(1)}px, ${(sourceY - panelY).toFixed(1)}px, 0) scale(${scaleX.toFixed(4)}, ${scaleY.toFixed(4)})`;
+    };
+    const finishSigClose = () => {
+      const modal = $("#sig-modal");
+      if (!modal || modal.hidden) return;
+      window.clearTimeout(sigModalCloseTimer);
+      sigModalAnimation = null;
+      modal.classList.remove("is-open", "is-closing", "sig-modal-preparing");
+      modal.hidden = true;
+      document.body.classList.remove("modal-open");
+      if (sigModalSource?.isConnected) {
+        sigModalSource.setAttribute("aria-expanded", "false");
+        sigModalSource.focus({ preventScroll: true });
+      }
+      sigModalSource = null;
+      document.dispatchEvent(new CustomEvent("wbfx:ringclose"));
+    };
+    const closeSigModal = () => {
+      const modal = $("#sig-modal");
+      const panel = modal?.querySelector(".sig-modal-panel");
+      if (!modal || modal.hidden || !panel) return false;
+      window.clearTimeout(sigModalCloseTimer);
+      if (sigModalAnimation) sigModalAnimation.cancel();
+      modal.classList.add("is-closing");
+      const sourceRect = sigModalSource?.isConnected ? sigModalSource.getBoundingClientRect() : null;
+      const panelRect = panel.getBoundingClientRect();
+      if (!sigReducedMotion() && sourceRect && panel.animate) {
+        sigModalAnimation = panel.animate([
+          { transform: "translate3d(0, 0, 0) scale(1)", opacity: 1, borderRadius: "22px" },
+          { transform: sigTransformBetween(sourceRect, panelRect), opacity: 0.18, borderRadius: "10px" }
+        ], {
+          duration: 420,
+          easing: "cubic-bezier(0.4, 0, 0.2, 1)",
+          fill: "forwards"
+        });
+        sigModalAnimation.addEventListener("finish", finishSigClose, { once: true });
+        sigModalCloseTimer = window.setTimeout(finishSigClose, 500);
+      } else {
+        modal.classList.remove("is-open");
+        sigModalCloseTimer = window.setTimeout(finishSigClose, 240);
+      }
+      return true;
+    };
+    const openSigModal = (signal, index, sourceCard) => {
       const modal = $("#sig-modal");
       if (!modal || !signal) return;
+      const panel = modal.querySelector(".sig-modal-panel");
       const angle = String(signal.angle || "").replace(/^你要讲的角度[:：]\s*/, "").trim();
       const excerpt = String(signal.excerpt || signal.text || "").trim();
+      const originalText = String(signal.original_text || "").trim();
       const metric = metricsText(signal.metrics, signal.likes);
       $("#sig-modal-meta").innerHTML = [
         `<span class="sig-modal-type" style="--c:${typeColor(signal.type)}">${esc(typeShort(signal.type))} ${String(index + 1).padStart(2, "0")}</span>`,
@@ -926,28 +979,58 @@
         `<span>${esc(shortText(String(signal.source || "信号").split("；")[0], 40))}</span>`,
         metric ? `<span>${esc(metric)}</span>` : ""
       ].filter(Boolean).join("");
-      $("#sig-modal-title").textContent = signal.title || "未命名信号";
+      $("#sig-modal-title").textContent = isBuilderSource(signal) ? localizedFetchTitle(signal) : (signal.title || "未命名信号");
       $("#sig-modal-body").innerHTML = `
-        ${excerpt ? `<section class="doc-card"><h3>原文 / 摘要</h3><p class="sig-modal-p">${esc(excerpt)}</p></section>` : ""}
+        ${excerpt ? `<section class="doc-card"><h3>${isBuilderSource(signal) ? "中文导读" : "原文 / 摘要"}</h3><p class="sig-modal-p">${esc(excerpt)}</p></section>` : ""}
+        ${originalText ? `<details class="doc-card"><summary>查看英文原文</summary><p class="sig-modal-p origin-text">${esc(originalText)}</p></details>` : ""}
         <section class="doc-card"><h3>你要讲的角度</h3><p class="sig-modal-p">${esc(angle || "—")}</p></section>
         ${signal.hook ? `<section class="doc-card"><h3>钩子</h3><p class="sig-modal-p">${esc(signal.hook)}</p></section>` : ""}
         <div class="sig-modal-actions">
           <a class="sig-modal-link" href="radar.html#${signalAnchor(signal)}">在雷达页查看 →</a>
           ${signal.url ? `<a class="sig-modal-link" href="${esc(signal.url)}" target="_blank" rel="noopener noreferrer">原文链接 ↗</a>` : ""}
         </div>`;
-      openModalShell("#sig-modal");
+      window.clearTimeout(sigModalCloseTimer);
+      if (sigModalAnimation) sigModalAnimation.cancel();
+      sigModalSource = sourceCard?.closest?.(".ring-card") || null;
+      if (sigModalSource) sigModalSource.setAttribute("aria-expanded", "true");
+      modal.hidden = false;
+      modal.classList.remove("is-closing");
+      modal.classList.add("sig-modal-preparing");
+      document.body.classList.add("modal-open");
+      const sourceRect = sigModalSource?.isConnected ? sigModalSource.getBoundingClientRect() : null;
+      const panelRect = panel?.getBoundingClientRect();
+      requestAnimationFrame(() => {
+        modal.classList.remove("sig-modal-preparing");
+        modal.classList.add("is-open");
+        if (!sigReducedMotion() && sourceRect && panelRect && panel?.animate) {
+          sigModalAnimation = panel.animate([
+            { transform: sigTransformBetween(sourceRect, panelRect), opacity: 0.42, borderRadius: "10px" },
+            { transform: "translate3d(0, 0, 0) scale(1)", opacity: 1, borderRadius: "22px" }
+          ], {
+            duration: 520,
+            easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+            fill: "both"
+          });
+          sigModalAnimation.addEventListener("finish", () => {
+            sigModalAnimation = null;
+            modal.querySelector(".doc-modal-close")?.focus({ preventScroll: true });
+          }, { once: true });
+        } else {
+          modal.querySelector(".doc-modal-close")?.focus({ preventScroll: true });
+        }
+      });
       const body = modal.querySelector(".doc-modal-body");
       if (body) body.scrollTop = 0;
     };
     document.addEventListener("wbfx:ringactivate", event => {
       const index = Number(event.detail?.index);
-      if (Number.isInteger(index) && signals[index]) openSigModal(signals[index], index);
+      if (Number.isInteger(index) && signals[index]) openSigModal(signals[index], index, event.target);
     });
     document.addEventListener("click", event => {
-      if (event.target.closest?.("[data-close-sig]")) closeModalShell("#sig-modal");
+      if (event.target.closest?.("[data-close-sig]")) closeSigModal();
     });
     document.addEventListener("keydown", event => {
-      if (event.key === "Escape") closeModalShell("#sig-modal");
+      if (event.key === "Escape") closeSigModal();
     });
 
     if (window.WBFX && typeof window.WBFX.refresh === "function") {
@@ -1087,7 +1170,7 @@
     const discData = sortedSignals.map(signal => ({
       t: signal.type,
       h: Math.round(priorityScore(signal) * 10) / 10,
-      n: shortText(signal.title || "", 24)
+      n: shortText(isBuilderSource(signal) ? localizedFetchTitle(signal) : (signal.title || ""), 24)
     }));
     $("#radar-scope").innerHTML = `
       <div class="rsweep-wrap" data-reveal>
@@ -1101,16 +1184,17 @@
         const metric = metricsText(signal.metrics, signal.likes);
         const url = signal.url || "";
         const builder = isBuilderSource(signal);
+        const title = builder ? localizedFetchTitle(signal) : signal.title;
         const excerpt = builder ? localizedFetchExcerpt(signal) : (signal.excerpt || signal.source || "—");
         const anchor = signalAnchor(signal);
         return `
         <article id="${anchor}" class="signal-card radar-signal ${signal.tier_rank === 1 ? "tier1" : ""}" tabindex="-1" data-signal-anchor="${anchor}" data-reveal>
           <div class="signal-meta"><span class="pill hot">${esc(signal.type)}</span><span class="pill">${esc(signal.tier || "—")}</span>${metric ? `<span class="pill">${esc(metric)}</span>` : ""}</div>
-          <h3>${esc(signal.title)}</h3>
+          <h3>${esc(title)}</h3>
           <details class="excerpt-box">
             <summary>${esc(shortText(excerpt, 150))}</summary>
             <p>${esc(excerpt)}</p>
-            ${builder ? `<p class="origin-text">英文原文：${esc(signal.excerpt || signal.text || "—")}</p>` : ""}
+            ${builder ? `<p class="origin-text">英文原文：${esc(signal.original_text || "—")}</p>` : ""}
           </details>
           <dl class="idea-detail">
             <div><dt>角度</dt><dd>${esc(signal.angle || "—")}</dd></div>
@@ -1178,7 +1262,7 @@
           const title = localizedFetchTitle(item);
           const excerpt = localizedFetchExcerpt(item);
           const isBuilder = isBuilderSource(item);
-          return `<details class="fetch-item ${isBuilder ? "builder" : ""}"><summary><strong>${esc(title || "未命名条目")}</strong><span>${esc(metric || item.source || "—")}</span></summary><p>${esc(excerpt || "—")}</p>${isBuilder ? `<p class="origin-text">英文原文：${esc(item.excerpt || item.text || "—")}</p>` : ""}<div class="fetch-meta"><span>${esc(item.source || item.created_at || "—")}</span>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">链接 ↗</a>` : ""}</div></details>`;
+          return `<details class="fetch-item ${isBuilder ? "builder" : ""}"><summary><strong>${esc(title || "未命名条目")}</strong><span>${esc(metric || item.source || "—")}</span></summary><p>${esc(excerpt || "—")}</p>${isBuilder ? `<p class="origin-text">英文原文：${esc(item.original_text || "—")}</p>` : ""}<div class="fetch-meta"><span>${esc(item.source || item.created_at || "—")}</span>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">链接 ↗</a>` : ""}</div></details>`;
         }).join("")}
       </section>
     `).join("");
@@ -1233,7 +1317,7 @@
     const schedule = pipeline.schedule || [];
     const next = schedule.find(item => item.status === "待剪" || item.status === "待补") || schedule[0];
     const conclusionCount = Math.min(12, Number(data.analytics?.summary?.published_count || 0));
-    $("#page-hero").innerHTML = heroHTML(data, "pipeline", "选题排期", `本轮 ${typeShort(next?.type || "—")} · 距结论 ${conclusionCount}/12。周一 / 周三 / 周五，一周三条，5 类型轮播保持变量干净。`);
+    $("#page-hero").innerHTML = heroHTML(data, "pipeline", "选题排期", `本轮 ${typeShort(next?.type || "—")} · 距结论 ${conclusionCount}/12。固定每周三发布一条，5 类型轮播保持变量干净。`);
     $("#pipeline-kpis").innerHTML = kpiHTML([
       { label: "候选池", value: pipeline.candidates?.length || 0, note: "active entries", hot: true },
       { label: "已排期", value: schedule.filter(item => !item.is_placeholder).length, note: `${schedule.length || 0} 个槽位` },
@@ -1359,23 +1443,26 @@
     const analytics = data.analytics || {};
     const summary = analytics.summary || {};
     const published = Number(summary.published_count || 0) > 0;
-    $("#page-hero").innerHTML = heroHTML(data, "analytics", "视频数据", "播放量、完播率、跳出率、赞播比会在发布归档后自动接管。发布前这里是对标基线仪表间。");
+    $("#page-hero").innerHTML = heroHTML(data, "analytics", "视频数据", "直接读取 03-已发布内容与 04-数据统计；缺失指标明确标为未回填，不使用模拟数据。");
     $("#analytics-kpis").innerHTML = kpiHTML([
-      { label: "累计发布", value: published ? summary.published_count : "—", note: "03-已发布内容" },
+      { label: "累计发布", value: published ? summary.published_count : "—", note: "真实发布记录" },
       { label: "累计播放", value: published ? formatNumber(summary.total_views) : "—", note: "views" },
-      { label: "平均完播率", value: published ? formatPercent(summary.avg_completion_rate) : "—", note: "completion", hot: published },
-      { label: "平均跳出率", value: published ? formatPercent(summary.avg_drop_rate) : "—", note: "drop" },
-      { label: "赞播比", value: published ? formatPercent(summary.average_like_rate) : "—", note: "likes / views" },
+      { label: "平均完播率", value: published ? formatPercent(summary.avg_completion_rate) : "—", note: `${summary.completion_sample_count || 0}/${summary.published_count || 0} 已回填`, hot: published },
+      { label: "平均跳出率", value: published ? formatPercent(summary.avg_drop_rate) : "—", note: `${summary.drop_sample_count || 0}/${summary.published_count || 0} 已回填` },
+      { label: "赞播比", value: published ? formatPercent(summary.average_like_rate) : "—", note: `${summary.like_sample_count || 0}/${summary.published_count || 0} 已回填` },
       { label: "领跑类型", value: published ? (summary.leading_type || "—") : "—", note: "按播放中位数", hot: Boolean(summary.leading_type) }
     ], "teal");
     renderAnalyticsGauge(data, published);
     $("#analytics-bars").innerHTML = typeCompareChart(analytics.type_medians || []);
     setupVideoTabs("#analytics-video-tabs", "#analytics-video-chart", analytics.items || [], { width: 960, height: 360, large: true });
-    $("#analytics-empty-chip").textContent = published ? `${summary.published_count} published` : "0 发布 · 待回填";
+    $("#analytics-empty-chip").textContent = published ? `${summary.published_count} 条真实记录` : "0 发布 · 待回填";
     const items = analytics.items || [];
+    const metricCell = (value, formatter) => numberOrNull(value) === null
+      ? `<span class="sub">未回填</span>`
+      : esc(formatter(value));
     $("#published-body").innerHTML = items.length ? items.map(item => `
-      <tr><td><strong>${esc(item.title)}</strong></td><td>${esc(item.platform || "—")}</td><td>${typeDot(item.type)}</td><td>${esc(item.publish_date || item.published_at || "—")}</td><td>${formatNumber(item.views)}</td><td>${formatPercent(item.completion_rate)}</td><td>${formatPercent(item.drop_rate)}</td><td>${formatNumber(item.likes)}</td><td>${formatPercent(item.like_rate)}</td><td>${esc(item.predicted_tier || "—")} / ${esc(item.actual_tier || "—")}</td></tr>
-    `).join("") : `<tr class="skeleton-row"><td><strong>还没开始发 · 待回填</strong></td><td>—</td><td>${typeDot("—")}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>— / —</td></tr>`;
+      <tr><td><strong>${esc(item.title)}</strong></td><td>${esc(item.platform || "未回填")}</td><td>${typeDot(item.type)}</td><td>${esc(item.publish_date || item.published_at || "未回填")}</td><td>${metricCell(item.views, formatNumber)}</td><td>${metricCell(item.completion_rate, formatPercent)}</td><td>${metricCell(item.drop_rate, formatPercent)}</td><td>${metricCell(item.likes, formatNumber)}</td><td>${metricCell(item.like_rate, formatPercent)}</td><td>${esc(item.predicted_tier || "N/A（无盲预测）")} / ${esc(item.actual_tier || "未回填")}</td></tr>
+    `).join("") : `<tr class="skeleton-row"><td><strong>暂无真实发布记录</strong></td><td colspan="9">请在 04-数据统计/数据统计表.md 回填；本页不显示模拟数据。</td></tr>`;
     activateFx();
   }
 
@@ -2967,18 +3054,158 @@
     activateFx();
   }
 
+  /* ── DBS 内容诊断控制台 · 与旧任务入口版并存，便于验收前回退 ── */
+  function dbsConsoleScriptRowHTML(item, data, index, deferred = false) {
+    const review = item.review || {};
+    const matched = (data.dbs?.reviews || []).filter(entry => (item.review_files || []).includes(entry.file));
+    const issueOpen = Number(review.issue_open || 0);
+    const issueTotal = Number(review.issue_total || 0);
+    const summary = matched.length
+      ? `${matched.length} 轮诊断 · ${issueOpen}/${issueTotal} 个问题待修${review.cold_zones ? ` · ${review.cold_zones} 个节奏冷区` : ""}`
+      : "还没有诊断";
+    return `
+      <article class="dbs-qrow ${matched.length ? "expandable" : ""}${deferred ? " is-later" : ""}" data-file="${esc(item.file)}">
+        <span class="dbs-qno">${String(index + 1).padStart(2, "0")}</span>
+        <div class="dbs-qmain">
+          <div class="dbs-qtitle"><h3>${esc(item.title)}</h3>${stageBadge(item.stage)}${matched.length ? `<span class="chev">▾</span>` : ""}</div>
+          <div class="dbs-qmeta"><span>${esc(item.date || "日期未标")}</span><span>${esc(summary)}</span><span>${esc(shortText(item.file, 46))}</span></div>
+          ${matched.length ? `<div class="x-detail" hidden>${matched.map(reviewDetailHTML).join("")}</div>` : ""}
+        </div>
+        <div class="dbs-qsignal ${issueOpen ? "has-open" : ""}"><b>${matched.length ? issueOpen : "—"}</b><span>${matched.length ? "待修" : "未诊断"}</span></div>
+        <div class="dbs-qaction">${copyBtnHTML(matched.length ? "重新诊断" : "开始诊断", `分析最新稿 scripts/${item.file}`, true)}</div>
+      </article>`;
+  }
+
+  function dbsConsoleActionHTML(no, title, note, command, primary = false) {
+    return `
+      <button type="button" class="dbs-action ${primary ? "primary" : ""}" data-copy="${esc(command)}" title="复制指令：${esc(command)}">
+        <span class="dbs-action-no">${esc(no)}</span>
+        <span class="dbs-action-copy"><b>${esc(title)}</b><small>${esc(note)}</small></span>
+        <span class="dbs-action-go">复制</span>
+      </button>`;
+  }
+
+  function renderDbsConsole(data) {
+    const dbs = data.dbs || {};
+    const cheat = data.cheat || {};
+    const wb = cheat.workbench || [];
+    const archives = dbs.archives || [];
+    const reviews = dbs.reviews || [];
+    const activeCase = wb[0] || null;
+    const activeMatched = activeCase
+      ? reviews.filter(entry => (activeCase.review_files || []).includes(entry.file))
+      : [];
+    const activeReview = activeCase?.review || {};
+    const activeOpen = Number(activeReview.issue_open || 0);
+    const activeTotal = Number(activeReview.issue_total || 0);
+    const openIssues = reviews.reduce((sum, review) => sum + Number(review.issue_open || 0), 0);
+    const activeFile = activeCase ? `scripts/${activeCase.file}` : "最新稿";
+    const flow = [
+      { no: "01", label: "共鸣", skill: "dbs-resonate" },
+      { no: "02", label: "结构", skill: "dbs-content" },
+      { no: "03", label: "口播", skill: "dbs-voice" },
+      { no: "04", label: "AI 味", skill: "dbs-ai-check" },
+      { no: "05", label: "校准", skill: "cheat-score" }
+    ];
+
+    $("#page-hero").innerHTML = heroHTML(data, "dbs", "dbs 诊断台", "一篇稿子从共鸣、结构、口播到 AI 味，逐项诊断；结论留在稿件档案里，下次接着改。");
+
+    $("#dbs-focus").innerHTML = activeCase ? `
+      <div class="dbs-focus-head">
+        <div><span class="dbs-overline">ACTIVE SCRIPT</span><small>当前稿件</small></div>
+        ${stageBadge(activeCase.stage)}
+      </div>
+      <h2>${esc(activeCase.title)}</h2>
+      <p>${activeMatched.length
+        ? `已经跑过 ${activeMatched.length} 轮诊断，目前还有 ${activeOpen}/${activeTotal} 个问题待修。`
+        : "这篇还没进诊断链，可以直接从完整诊断开始。"} </p>
+      <div class="dbs-flow" aria-label="内容诊断链">
+        ${flow.map((step, index) => `
+          <div class="dbs-flow-step ${activeMatched.length && index < 2 ? "is-used" : ""}">
+            <span>${step.no}</span><b>${esc(step.label)}</b><small>/${esc(step.skill)}</small>
+          </div>`).join("")}
+      </div>
+      <div class="dbs-focus-metrics">
+        <div><b>${wb.length}</b><span>稿件在档</span></div>
+        <div><b>${reviews.length}</b><span>诊断记录</span></div>
+        <div><b>${openIssues}</b><span>问题待修</span></div>
+        <div><b>${cheat.benchmark_sample_count || 0}</b><span>对标样本</span></div>
+      </div>` : emptyState("还没有稿件", "先把第一稿放进 scripts/，这里会自动出现");
+
+    $("#dbs-actions").innerHTML = `
+      <div class="dbs-actions-head"><span>DIRECT ACTIONS</span><b>立即开始</b><small>复制后发给 AI 助手</small></div>
+      <div class="dbs-action-list">
+        ${dbsConsoleActionHTML("01", "完整诊断", "共鸣、内容、节奏、传播、打分", `分析最新稿 ${activeFile}`, true)}
+        ${dbsConsoleActionHTML("02", "检查口播", "按你的真实声纹找不顺口的地方", `用 dbs-voice 检查 ${activeFile}`)}
+        ${dbsConsoleActionHTML("03", "检查 AI 味", "只标出问题，不自动重写", `用 dbs-ai-check 检查 ${activeFile}`)}
+        ${dbsConsoleActionHTML("04", "优化开头", "单独处理前几秒的停留理由", `用 dbs-hook 优化 ${activeFile} 的开头`)}
+      </div>
+      <div class="dbs-connected"><i></i><span>${dbs.local_count || 0} 个本地 DBS 能力已接入工作台</span></div>`;
+
+    $("#dbs-script-chip").textContent = `${wb.length} 篇 · ${openIssues} 个问题待修`;
+    $("#dbs-script-list").innerHTML = wb.length
+      ? `${wb.map((item, index) => dbsConsoleScriptRowHTML(item, data, index, index >= 6)).join("")}
+         ${wb.length > 6 ? `<button type="button" class="dbs-show-all" data-show-queue>查看剩余 ${wb.length - 6} 篇稿件</button>` : ""}`
+      : emptyState("scripts/ 目录为空", "写完第一稿放进 scripts/ 即入档");
+    setupExpandables("#dbs-script-list", ".dbs-qrow");
+    $("#dbs-script-list")?.addEventListener("click", event => {
+      const button = event.target.closest("[data-show-queue]");
+      if (!button) return;
+      $("#dbs-script-list").querySelectorAll(".dbs-qrow.is-later").forEach(row => row.classList.remove("is-later"));
+      button.remove();
+    });
+
+    $("#dbs-arch-chip").textContent = `${archives.length} 份可续接`;
+    $("#dbs-archives").innerHTML = archives.length
+      ? archives.map(archiveCardHTML).join("")
+      : emptyState("还没有诊断存档", "完成一次诊断并保存后，会出现在这里");
+    setupExpandables("#dbs-archives", ".arch-card");
+
+    $("#dbs-benchmark").innerHTML = `
+      <div class="dbs-benchmark-count"><span>BENCHMARK SAMPLES</span><b>${cheat.benchmark_sample_count || 0}</b><small>真实样本已入库</small></div>
+      <div class="dbs-benchmark-info">
+        <span>当前对标组</span>
+        <b>${esc(cheat.benchmark_name || "尚未建立")}</b>
+        <p>先用 dbs-benchmark 筛选，再把可复用的结构与表达交给 cheat 校准。</p>
+        ${copyBtnHTML("复制找对标指令", "帮我找对标", true)}
+      </div>`;
+
+    const mediaSkills = new Set(["dbs-benchmark", "dbs-resonate", "dbs-content", "dbs-voice", "dbs-hook", "dbs-xhs-title", "dbs-ai-check", "dbs-spread", "dbs-save", "dbs-restore", "dbs-report"]);
+    const groups = (dbs.groups || []).map(group => ({
+      ...group,
+      skills: (group.skills || []).filter(skill => mediaSkills.has(skill.name))
+    })).filter(group => group.skills.length);
+    const visibleCount = groups.reduce((sum, group) => sum + group.skills.length, 0);
+    $("#dbs-tools-count").textContent = `${visibleCount} 个 · 只显示自媒体相关`;
+    $("#dbs-groups").innerHTML = groups.map(group => `
+      <section class="dbs-cat">
+        <div class="dbs-cat-head"><span class="bar4"></span><h2>${esc(group.cat)}</h2><span class="n">${group.skills.length} 个工具</span></div>
+        <div class="skill-grid">
+          ${group.skills.map(skill => `
+            <article class="skill-card">
+              <div class="skill-name">${esc(skill.name)}${skill.local ? `<span class="skill-local">本地已装</span>` : ""}</div>
+              <div class="skill-desc">${esc(skill.desc)}</div>
+              <div class="skill-trig">${esc(skill.trigger)}</div>
+            </article>`).join("")}
+        </div>
+      </section>`).join("") || emptyState("暂无自媒体相关工具");
+    activateFx();
+  }
+
   function renderSideStatus(data) {
     const container = $("#side-status");
     if (!container) return;
     const global = data.global || {};
     const alert = global.alert || {};
-    const sources = Array.isArray(global.signal_sources) ? global.signal_sources.length : 0;
+    const sources = Array.isArray(global.signal_sources)
+      ? global.signal_sources.filter(source => source !== "manual-paste").length
+      : 0;
     container.innerHTML = `
       <div class="sf-alert ${alert.level === "critical" ? "crit" : ""}">${esc(alert.text || "状态正常")}</div>
       <div class="sf-row"><span>阶段</span><b>${esc(global.stage || "—")}</b></div>
       <div class="sf-row"><span>校准</span><b>${esc(String(global.calibration_samples ?? 0))} / 5</b></div>
-      <div class="sf-row"><span>信号源</span><b>${sources} 在线</b></div>
-      <div class="sf-date">${esc(global.today || "")}</div>`;
+      <div class="sf-row"><span>自动源</span><b>${sources} 个</b></div>
+      <div class="sf-date">雷达更新 ${esc(global.radar_last_date || global.today || "未知")}</div>`;
   }
 
   /* ── 数据过期告警横幅（9 页共享）──
@@ -3046,7 +3273,7 @@
     if (page === "analytics") renderAnalytics(data);
     if (page === "library") renderLibrary(data);
     if (page === "cheat") renderCheat(data);
-    if (page === "dbs") renderDbs(data);
+    if (page === "dbs") renderDbsConsole(data);
     if (page === "radar") window.addEventListener("hashchange", expandSignalFromHash);
   });
 })();

@@ -53,10 +53,17 @@
 git clone https://github.com/fengjunchengCode/obsidian-creator-workbench.git
 cd obsidian-creator-workbench/dashboard
 python3 build.py     # 读上一级目录的示例内容，生成 9 个页面
-python3 serve.py     # 打开 http://127.0.0.1:8000
+python3 serve.py     # 打开 http://127.0.0.1:8765
 ```
 
 只要 Python 3.9+，**没有任何第三方依赖**，不用 pip install。
+
+如果要让开源工作台只在本机读取你自己的真实 vault（源文件不会复制进仓库），启动时传入数据目录：
+
+```bash
+python3 serve.py 8877 --vault ~/你的/vault路径
+# 或：CONTENT_WORKBENCH_VAULT=~/你的/vault路径 python3 serve.py 8877
+```
 
 生成的是纯静态 HTML，双击 `dashboard/index.html` 也能直接看，不起服务也行。
 

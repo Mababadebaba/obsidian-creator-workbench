@@ -10,7 +10,7 @@
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap"></noscript>
   <link rel="stylesheet" href="assets/app.css">
 </head>
-<body data-page="dbs" class="screen-dbs-v6">
+<body data-page="dbs" class="screen-dbs-v6 dbs-console-page">
   <div class="bg"></div>
   <div class="grain"></div>
   <div class="app">
@@ -29,24 +29,28 @@
       <a class="s-item on" href="dbs.html"><i>◈</i>dbs 工具箱</a>
       <div class="s-foot" id="side-status"></div>
     </nav>
-    <main class="screen screen-dbs-v6">
+    <main class="screen screen-dbs-v6 dbs-console">
       <section id="page-hero" class="hero compact"></section>
-      <section id="dbs-kpis" class="kpi-row"></section>
-      <section id="dbs-entries" class="entry-row"></section>
-      <section class="glass panel" id="dbs-sec-script">
-        <div class="panel-head"><h2>诊断一篇稿子</h2><span id="dbs-script-chip" class="chip"></span></div>
-        <div id="dbs-script-list" class="wb-list"></div>
+      <section class="dbs-command-center" aria-label="DBS 稿件诊断控制台">
+        <article id="dbs-focus" class="dbs-focus"></article>
+        <aside id="dbs-actions" class="dbs-actions" aria-label="立即开始"></aside>
       </section>
-      <section class="glass panel" id="dbs-sec-biz">
-        <div class="panel-head"><h2>商业 / 方向诊断</h2><span id="dbs-arch-chip" class="chip"></span></div>
-        <div id="dbs-archives" class="arch-list"></div>
+      <section class="glass panel dbs-queue-panel" id="dbs-sec-script">
+        <div class="panel-head"><h2>稿件诊断队列</h2><span id="dbs-script-chip" class="chip"></span></div>
+        <div id="dbs-script-list" class="dbs-queue"></div>
       </section>
-      <section class="glass panel" id="dbs-sec-benchmark">
-        <div class="panel-head"><h2>找对标</h2><span class="chip">dbs-benchmark 五重过滤</span></div>
-        <div id="dbs-benchmark" class="bet-body"></div>
-      </section>
+      <div class="dbs-lower">
+        <section class="glass panel" id="dbs-sec-biz">
+          <div class="panel-head"><h2>诊断存档</h2><span id="dbs-arch-chip" class="chip"></span></div>
+          <div id="dbs-archives" class="arch-list"></div>
+        </section>
+        <section class="glass panel dbs-benchmark-panel" id="dbs-sec-benchmark">
+          <div class="panel-head"><h2>对标证据</h2><span class="chip">五重过滤</span></div>
+          <div id="dbs-benchmark" class="dbs-benchmark-body"></div>
+        </section>
+      </div>
       <section class="drawer-stack">
-        <details class="glass drawer"><summary>工具索引 · dbs skills<span class="drawer-count" id="dbs-tools-count"></span><span class="drawer-chev">▾</span></summary><div class="drawer-body" id="dbs-groups"></div></details>
+        <details class="glass drawer"><summary>自媒体相关 DBS 工具<span class="drawer-count" id="dbs-tools-count"></span><span class="drawer-chev">▾</span></summary><div class="drawer-body" id="dbs-groups"></div></details>
       </section>
     </main>
   </div>
