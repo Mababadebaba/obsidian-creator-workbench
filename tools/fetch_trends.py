@@ -69,12 +69,11 @@ def one_line(text: str, limit: int = 220) -> str:
     return text[: limit - 1] + "…" if len(text) > limit else text
 
 
-def get_json(url: str, attempts: int = 3) -> object:
+def get_json(url: str, attempts: int = 3, headers: dict[str, str] | None = None) -> object:
     """GET JSON with short retries for transient TLS/CDN failures."""
-    request = urllib.request.Request(
-        url,
-        headers={"User-Agent": "Mozilla/5.0 Chrome/124 content-workbench/1.0"},
-    )
+    request_headers = {"User-Agent": "Mozilla/5.0 Chrome/124 content-workbench/1.0"}
+    request_headers.update(headers or {})
+    request = urllib.request.Request(url, headers=request_headers)
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
@@ -115,6 +114,57 @@ def get_bytes(url: str, attempts: int = 3) -> bytes:
 # ---------------------------------------------------------------------------
 # 数据源适配器：每个返回 [{title, excerpt, source, metrics, url, created_at}]
 # ---------------------------------------------------------------------------
+
+def fetch_douyin_hot(config: dict) -> list[dict]:
+    """抓抖音网页端热榜；这是公开网页请求，不是开放平台稳定性承诺接口。"""
+    url = config.get("url") or "https://www.douyin.com/aweme/v1/web/hot/search/list/"
+    payload = get_json(
+        url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36"
+            ),
+            "Referer": "https://www.douyin.com/",
+        },
+    )
+    if not isinstance(payload, dict) or payload.get("status_code") not in {0, None}:
+        raise ValueError("抖音网页热榜返回状态异常")
+    data = payload.get("data")
+    words = data.get("word_list") if isinstance(data, dict) else None
+    if not isinstance(words, list):
+        raise ValueError("抖音网页热榜返回结构缺少 data.word_list")
+
+    limit = int(config.get("limit", 50))
+    items: list[dict] = []
+    for index, raw in enumerate(words, start=1):
+        if not isinstance(raw, dict):
+            continue
+        title = one_line(str(raw.get("word") or ""), 160)
+        if not title:
+            continue
+        position = int(raw.get("position") or index)
+        hot_value = int(raw.get("hot_value") or 0)
+        sentence_id = str(raw.get("sentence_id") or "").strip()
+        item_url = (
+            f"https://www.douyin.com/hot/{urllib.parse.quote(sentence_id)}"
+            if sentence_id
+            else f"https://www.douyin.com/search/{urllib.parse.quote(title)}"
+        )
+        created_at = ""
+        event_time = raw.get("event_time")
+        if isinstance(event_time, (int, float)) and event_time > 0:
+            created_at = datetime.fromtimestamp(event_time, timezone.utc).isoformat().replace("+00:00", "Z")
+        items.append({
+            "title": title,
+            "excerpt": "",
+            "source": "抖音网页热榜（公开网页请求）",
+            "metrics": f"热度 {hot_value} · 排名 #{position}",
+            "url": item_url,
+            "created_at": created_at,
+            "category": "douyin-hot",
+        })
+    return items[:limit]
 
 def fetch_hackernews(config: dict) -> list[dict]:
     limit = int(config.get("limit", 20))
@@ -327,6 +377,7 @@ def fetch_follow_builders(config: dict) -> list[dict]:
 
 
 ADAPTERS = {
+    "douyin-hot": fetch_douyin_hot,
     "aihot": fetch_aihot,
     "follow-builders": fetch_follow_builders,
     "hackernews": fetch_hackernews,
@@ -335,6 +386,13 @@ ADAPTERS = {
 }
 
 BUILTIN_SOURCES = [
+    {
+        "id": "douyin-hot",
+        "type": "douyin-hot",
+        "label": "抖音网页热榜（实时）",
+        "limit": 50,
+        "enabled": True,
+    },
     {
         "id": "aihot",
         "type": "aihot",
@@ -452,7 +510,7 @@ def merge_into_radar(existing: str, full_section: str, now: datetime) -> str:
 
 # ---------------------------------------------------------------------------
 
-def update_state(vault: Path, now: datetime, count: int) -> None:
+def update_state(vault: Path, now: datetime, count: int, source_ids: list[str]) -> None:
     """回填 .cheat-state.json 的抓取时间。
 
     不写的话，会话状态报告会一直按旧值报「上次抓热点 N 天前」——
@@ -468,6 +526,7 @@ def update_state(vault: Path, now: datetime, count: int) -> None:
         return
     state["last_trends_run_at"] = now.astimezone().isoformat(timespec="seconds")
     state["last_trends_added_count"] = count
+    state["enabled_trend_sources"] = source_ids
     path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
@@ -533,7 +592,7 @@ def main(argv: list[str] | None = None) -> int:
     radar_path.write_text(merge_into_radar(existing, section, now), encoding="utf-8")
 
     total = sum(len(items) for _, items in groups)
-    update_state(args.vault, now, total)
+    update_state(args.vault, now, total, [str(source["id"]) for source in sources])
     print(f"\n📡 已写入 {radar_path}（{total} 条，精选区未改动）")
     print("下一步：对 AI 说「刷新热点雷达」，让它挑选并补角度/钩子")
     print("然后：cd dashboard && python3 build.py")

@@ -5,6 +5,7 @@
 2. 二次抓取不会覆盖 AI 写好的精选区
 """
 
+import json
 import sys
 import tempfile
 import unittest
@@ -112,8 +113,32 @@ FOLLOW_X = {
     ]
 }
 
+DOUYIN_HOT = {
+    "status_code": 0,
+    "data": {
+        "word_list": [
+            {
+                "word": "测试抖音热榜词",
+                "hot_value": 123456,
+                "position": 1,
+                "event_time": 1788483600,
+                "sentence_id": 2667001,
+            }
+        ]
+    },
+}
+
 
 class RenderTests(unittest.TestCase):
+    def test_state_reflects_configured_sources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / ".cheat-state.json"
+            path.write_text('{"enabled_trend_sources": ["old"]}', encoding="utf-8")
+            fetch_trends.update_state(Path(tmp), datetime(2026, 9, 26), 42, ["douyin-hot", "aihot"])
+            state = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(state["enabled_trend_sources"], ["douyin-hot", "aihot"])
+        self.assertEqual(state["last_trends_added_count"], 42)
+
     def test_rendered_section_is_parsed_by_build(self):
         section = fetch_trends.render_full_section([("测试源", SAMPLE)], [])
         radar = fetch_trends.merge_into_radar("", section, datetime(2026, 8, 4))
@@ -192,6 +217,17 @@ class RenderTests(unittest.TestCase):
 
 
 class AdapterTests(unittest.TestCase):
+    def test_douyin_hot_maps_official_web_rank_fields(self):
+        with mock.patch.object(fetch_trends, "get_json", return_value=DOUYIN_HOT):
+            items = fetch_trends.fetch_douyin_hot({"limit": 50})
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["title"], "测试抖音热榜词")
+        self.assertEqual(items[0]["metrics"], "热度 123456 · 排名 #1")
+        self.assertEqual(items[0]["url"], "https://www.douyin.com/hot/2667001")
+        self.assertEqual(items[0]["source"], "抖音网页热榜（公开网页请求）")
+        self.assertEqual(items[0]["category"], "douyin-hot")
+
     def test_get_json_retries_transient_network_failure(self):
         response = mock.MagicMock()
         response.__enter__.return_value = response

@@ -1,7 +1,15 @@
 {
-  "//": "热点数据源配置。type 支持 aihot / follow-builders / hackernews / github / rss，都不需要 API key。",
-  "//2": "AI 内容默认用 AIHOT + Zara Zhang 维护的 follow-builders；其他垂类可换成自己的 RSS。",
+  "//": "热点数据源配置。type 支持 douyin-hot / aihot / follow-builders / hackernews / github / rss，都不需要 API key。",
+  "//2": "通用抖音模式以抖音网页热榜为主，AIHOT 与 follow-builders 为外部资讯补充；其他垂类可换成自己的 RSS。",
   "sources": [
+    {
+      "id": "douyin-hot",
+      "type": "douyin-hot",
+      "label": "抖音网页热榜（实时）",
+      "url": "https://www.douyin.com/aweme/v1/web/hot/search/list/",
+      "limit": 50,
+      "enabled": true
+    },
     {
       "id": "aihot",
       "type": "aihot",
