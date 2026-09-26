@@ -406,7 +406,7 @@
       .map((item, index) => ({ item, index, value: videoMetricValue(item, metric.key) }))
       .filter(row => row.value !== null);
     if (!rows.length) {
-      return emptyState(`暂无真实${metric.label}`, "在 04-数据统计/数据统计表.md 回填后显示；本页不使用模拟走势。");
+      return emptyState(`暂无真实${metric.label}`, "录入已发视频和真实指标后显示；本页不使用模拟走势。");
     }
     const width = options.width || 520;
     const height = options.height || 180;
@@ -512,12 +512,17 @@
     const max = Math.max(...rows.map(item => item.selected), 1);
     const sourceRows = Object.entries(groupedBy(fullFetch || [], "group"))
       .map(([name, items]) => ({ name, count: items.length }))
-      .sort((a, b) => b.count - a.count);
+      .sort((a, b) => Number(/抖音/.test(b.name)) - Number(/抖音/.test(a.name)) || b.count - a.count);
     return `
       <div class="radar-dist">
+        <div class="source-rank">
+          <h3>点选全量来源</h3>
+          <button type="button" class="source-choice" data-source-group="all" aria-pressed="false"><span>全部来源</span><b>${fullFetch.length}</b></button>
+          ${sourceRows.map(row => `<button type="button" class="source-choice" data-source-group="${esc(row.name)}" aria-pressed="false"><span>${esc(row.name.replace(/（.*?）/g, ""))}</span><b>${row.count}</b></button>`).join("")}
+        </div>
         <div class="dist-note">
           <b>怎么看</b>
-          <span>条长 = 今日精选数量；亮色段 = tier1；下方是本次全量来源规模。这个面板只回答“今天该优先看哪类”。</span>
+          <span>上方点选来源，右侧只显示该来源；默认先看抖音。条长 = 今日精选数量；亮色段 = tier1。</span>
         </div>
         <div class="dist-list">
           ${rows.map(row => `
@@ -526,10 +531,6 @@
               <div class="dist-track"><i style="width:${Math.max(7, row.selected / max * 100)}%;--c:${typeColor(row.type)}"></i><em style="width:${Math.max(0, row.tier1 / Math.max(row.selected, 1) * 100)}%"></em></div>
             </div>
           `).join("")}
-        </div>
-        <div class="source-rank">
-          <h3>全量来源</h3>
-          ${sourceRows.map(row => `<div><span>${esc(row.name.replace(/（.*?）/g, ""))}</span><b>${row.count}</b></div>`).join("")}
         </div>
       </div>
     `;
@@ -653,7 +654,7 @@
         return (a.tier_rank || 9) - (b.tier_rank || 9);
       });
     if (!rows.length) {
-      grid.innerHTML = emptyState("没有匹配灵感", "换一个筛选条件");
+      grid.innerHTML = items.length ? emptyState("没有匹配灵感", "换一个筛选条件") : emptyState("还没有灵感", "点击上方“记一条灵感”开始收集");
       return;
     }
     const order = ["我的灵感", "自动化热点", "随手记"];
@@ -1164,7 +1165,7 @@
       { label: "今日命中", value: radar.hit_count || 0, note: "今日值得做", hot: true },
       { label: "文档筛出", value: radar.reported_hit_count || "—", note: "已归档" },
       { label: "Tier1", value: sortedSignals.filter(item => item.tier_rank === 1).length, note: "优先级最高", hot: true },
-      { label: "全量备查", value: radar.full_fetch?.length || 0, note: "AI HOT + builders" }
+      { label: "全量备查", value: radar.full_fetch?.length || 0, note: "按来源点选查看" }
     ], "steel");
     /* 签名动效：canvas 雷达扫描盘（effects.js 能力 7），数据经 data-* 传入 */
     const discData = sortedSignals.map(signal => ({
@@ -1173,11 +1174,11 @@
       n: shortText(isBuilderSource(signal) ? localizedFetchTitle(signal) : (signal.title || ""), 24)
     }));
     $("#radar-scope").innerHTML = `
+      ${radarDistribution(sortedSignals, radar.full_fetch || [])}
       <div class="rsweep-wrap" data-reveal>
         <div class="rsweep" data-radar-sweep data-radar-signals="${esc(JSON.stringify(discData))}" aria-label="雷达扫描盘：四象限对应四类型，半径代表互动热度" role="img"></div>
         <div class="rsweep-legend"><span>四象限 = 四类型</span><span>越靠中心 = 越热</span><span>扫过 · 对应卡片亮起</span></div>
-      </div>
-      ${radarDistribution(sortedSignals, radar.full_fetch || [])}`;
+      </div>`;
     $("#radar-count").textContent = `${radar.hit_count || 0} selected`;
     $("#signal-list").innerHTML = sortedSignals
       .map(signal => {
@@ -1207,9 +1208,27 @@
           </div>
         </article>
       `;
-      }).join("") || emptyState("今日暂无信号", "刷新热点后出现精选卡片");
-    $("#radar-type-bars").innerHTML = `<div class="dist-foot">全量列表已按 score / 互动热度降序展示，优先读上方。</div>`;
-    $("#full-fetch").innerHTML = renderFullFetch(radar.full_fetch || []);
+      }).join("") || emptyState("今日尚未精选", "下方已有真实抓取；核验原始内容后再选题");
+    $("#radar-type-bars").innerHTML = `<div class="dist-foot">来源可在左侧点选。榜单标题只是线索，点开原始链接核实后再写脚本。</div>`;
+    const fetched = radar.full_fetch || [];
+    const douyinGroup = fetched.find(item => /抖音/.test(item.group || ""))?.group;
+    const selectGroup = group => {
+      const visible = group === "all" ? fetched : fetched.filter(item => item.group === group);
+      $("#full-fetch").innerHTML = renderFullFetch(visible);
+      $("#full-fetch-status").textContent = `${group === "all" ? "全部来源" : group.replace(/（.*?）/g, "")} · ${visible.length} 条`;
+      document.querySelectorAll(".source-choice").forEach(button => {
+        const active = button.dataset.sourceGroup === group;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+    };
+    $("#radar-scope").addEventListener("click", event => {
+      const button = event.target.closest(".source-choice");
+      if (!button) return;
+      selectGroup(button.dataset.sourceGroup);
+      $("#full-fetch").scrollIntoView({ block: "start", behavior: "smooth" });
+    });
+    selectGroup(douyinGroup || "all");
     /* 扫描盘 → 信号卡联动：radarping 闪亮 1.2s；radarselect 滚动定位并高亮 */
     const anchors = sortedSignals.map(signalAnchor);
     const cardOf = event => {
@@ -1279,7 +1298,7 @@
 
   /* ── 生产线轨道：日期解析（"周五 7-31" → 731，跨月可比较） ── */
   function pipelineDayValue(text) {
-    const match = /(\d{1,2})\s*-\s*(\d{1,2})/.exec(String(text || ""));
+    const match = /(\d{1,2})\s*-\s*(\d{1,2})\s*$/.exec(String(text || ""));
     return match ? Number(match[1]) * 100 + Number(match[2]) : null;
   }
 
@@ -1317,7 +1336,7 @@
     const schedule = pipeline.schedule || [];
     const next = schedule.find(item => item.status === "待剪" || item.status === "待补") || schedule[0];
     const conclusionCount = Math.min(12, Number(data.analytics?.summary?.published_count || 0));
-    $("#page-hero").innerHTML = heroHTML(data, "pipeline", "选题排期", `本轮 ${typeShort(next?.type || "—")} · 距结论 ${conclusionCount}/12。固定每周三发布一条，5 类型轮播保持变量干净。`);
+    $("#page-hero").innerHTML = heroHTML(data, "pipeline", "选题排期", schedule.length ? `本轮 ${typeShort(next?.type || "—")} · 已登记 ${schedule.length} 条排期。发布日期和状态以你录入的计划为准。` : "还没有排期。点击下方“添加排期”，先登记选题与计划日期。");
     $("#pipeline-kpis").innerHTML = kpiHTML([
       { label: "候选池", value: pipeline.candidates?.length || 0, note: "active entries", hot: true },
       { label: "已排期", value: schedule.filter(item => !item.is_placeholder).length, note: `${schedule.length || 0} 个槽位` },
@@ -1361,7 +1380,7 @@
           <div class="pl-week-head"><span class="pl-week-bar"></span><span class="pl-week-title">${esc(shortText(lane.week || "未分周", 42))}</span><span class="pl-week-note">${lane.rows.length} 节车厢</span></div>
           <div class="pl-lane">${cells.join("")}</div>
         </section>`;
-    }).join("") || `<div class="pl-inline-empty">暂无排期 · 去 02-选题排期.md 补位。</div>`;
+    }).join("") || `<div class="pl-inline-empty">暂无排期 · 点击“添加排期”即可录入。</div>`;
 
     /* ── 下方模块：轮播 / 候选池分布 / 类型表现 + 库存缺口 ── */
     $("#rotation-ring").innerHTML = gauge(20 * Math.max(1, TYPE_ORDER.indexOf(next?.type || "共鸣类") + 1), { center: next?.type || "轮播" });
@@ -1382,7 +1401,7 @@
       </div>` : `<div class="pl-inline-empty">发布回填后自动出现类型表现追踪。</div>`;
     $("#gap-list").innerHTML = (pipeline.gaps || []).length
       ? pipeline.gaps.map(item => `<div class="signal-card pl-gap-row" style="--c:${typeColor(item.type)}"><span class="pill hot">${esc(item.type)}</span><div class="sub">剩余 ${esc(item.raw_remaining)} · ${esc(item.topics)}</div></div>`).join("")
-      : `<div class="pl-inline-empty">库存正常 · 当前排期表没有标红缺口。</div>`;
+      : `<div class="pl-inline-empty">${schedule.length ? "当前排期表没有标红缺口。" : "还没有排期或库存数据，暂不能判断缺口。"}</div>`;
     activateFx();
   }
 
@@ -1462,7 +1481,7 @@
       : esc(formatter(value));
     $("#published-body").innerHTML = items.length ? items.map(item => `
       <tr><td><strong>${esc(item.title)}</strong></td><td>${esc(item.platform || "未回填")}</td><td>${typeDot(item.type)}</td><td>${esc(item.publish_date || item.published_at || "未回填")}</td><td>${metricCell(item.views, formatNumber)}</td><td>${metricCell(item.completion_rate, formatPercent)}</td><td>${metricCell(item.drop_rate, formatPercent)}</td><td>${metricCell(item.likes, formatNumber)}</td><td>${metricCell(item.like_rate, formatPercent)}</td><td>${esc(item.predicted_tier || "N/A（无盲预测）")} / ${esc(item.actual_tier || "未回填")}</td></tr>
-    `).join("") : `<tr class="skeleton-row"><td><strong>暂无真实发布记录</strong></td><td colspan="9">请在 04-数据统计/数据统计表.md 回填；本页不显示模拟数据。</td></tr>`;
+    `).join("") : `<tr class="skeleton-row"><td><strong>暂无真实发布记录</strong></td><td colspan="9">点击“录入视频数据”添加已发作品；未知指标可以留空。</td></tr>`;
     activateFx();
   }
 
@@ -1623,10 +1642,10 @@
         <div class="ammo-top"><span class="ammo-icon">${esc(ammoIcon(category.name))}</span><div><h3>${esc(category.name)}</h3><b>${esc(category.count || 0)} 条</b></div></div>
         <p>${esc(category.usage || "用于补充内容生产弹药。")}</p>
         <div class="ammo-items">
-          ${(category.items || []).slice(0, 4).map(item => `<div><span>${esc(item.title)}</span><em>${esc(item.status || item.created || "—")}</em></div>`).join("")}
+          ${(category.items || []).map(item => `<details class="ammo-entry"><summary><span>${esc(item.title)}</span><em>${esc(item.status || item.created || "—")}</em></summary><p>${esc(item.content || "这条素材暂未填写正文。")}</p></details>`).join("")}
         </div>
       </article>
-    `).join("") : emptyState("素材库为空", "往 02-素材库 添加 Markdown 后自动出现");
+    `).join("") : emptyState("素材库为空", "点击上方“添加素材”录入第一条内容");
   }
 
   function renderLibrary(data) {
@@ -3209,7 +3228,7 @@
   }
 
   /* ── 数据过期告警横幅（9 页共享）──
-     定时任务 每晚 20:00 抓热点；抓失败时看板会静默显示旧信号。
+     以实际全量抓取或精选归档的最新日期判断；不推断定时任务具体时间。
      freshness 为 stale/critical 时在各页 main 顶部插一条横幅，其余情况完全不渲染。
      宿主选 main 而不是 .app：.app 是 216px + 1fr 两列 grid，直接塞子元素会串格。 */
   const STALE_BANNER_KEY = "wb-stale-banner-dismissed";
@@ -3246,7 +3265,7 @@
     banner.innerHTML = `
       <span class="wb-stale-mark">⚠</span>
       <b class="wb-stale-main">雷达数据已过期 ${days === null ? "—" : esc(String(days))} 天 · 最后成功刷新 ${esc(lastDate)}</b>
-      <span class="wb-stale-hint">每日 20:00 自动刷新未成功 · 检查热点刷新任务</span>
+      <span class="wb-stale-hint">请检查本机热点刷新任务；旧数据不会冒充实时榜单</span>
       <button type="button" class="wb-stale-close" aria-label="关闭数据过期提示">✕</button>`;
     const close = banner.querySelector(".wb-stale-close");
     if (close) {
@@ -3258,12 +3277,143 @@
     host.insertBefore(banner, host.firstChild);
   }
 
+  const ENTRY_FORMS = {
+    idea: {
+      title: "记一条灵感",
+      note: "先放进“待筛选”，不自动生成脚本或排期。",
+      fields: [
+        { name: "title", label: "灵感 / 选题", type: "text", required: true, max: 180, placeholder: "一句话记下你的想法" },
+        { name: "source", label: "来源或备注（选填）", type: "text", max: 180, placeholder: "例如：评论区问题、自己观察" }
+      ]
+    },
+    schedule: {
+      title: "添加选题排期",
+      note: "仅登记计划，不会自动发布；请先确认账号和素材是否适合这个选题。",
+      fields: [
+        { name: "topic", label: "选题", type: "text", required: true, max: 180 },
+        { name: "publish_day", label: "计划发布日期", type: "date", required: true },
+        { name: "type", label: "类型", type: "select", options: ["热点", "共鸣类", "AI教程向", "AI赚钱方式", "方法论", "其他"] },
+        { name: "status", label: "状态", type: "select", options: ["待拍", "已拍", "待剪", "已剪", "待发布"] }
+      ]
+    },
+    video: {
+      title: "录入已发视频",
+      note: "只填你已核实的数据；没拿到的指标留空，不会补模拟值。",
+      fields: [
+        { name: "title", label: "视频标题", type: "text", required: true, max: 180 },
+        { name: "publish_day", label: "发布日期", type: "date", required: true },
+        { name: "platform", label: "平台", type: "select", options: ["抖音", "快手", "小红书", "视频号", "B站", "TikTok", "其他"] },
+        { name: "type", label: "类型", type: "select", options: ["热点", "共鸣类", "AI教程向", "AI赚钱方式", "方法论", "其他"] },
+        { name: "url", label: "视频链接（选填）", type: "url", max: 600, placeholder: "https://..." },
+        { name: "views", label: "播放量（选填）", type: "number", step: "1" },
+        { name: "likes", label: "点赞（选填）", type: "number", step: "1" },
+        { name: "comments", label: "评论（选填）", type: "number", step: "1" },
+        { name: "shares", label: "转发（选填）", type: "number", step: "1" },
+        { name: "completion_rate", label: "完播率 %（选填）", type: "number", step: "0.01", max: 100 },
+        { name: "drop_rate", label: "跳出率 %（选填）", type: "number", step: "0.01", max: 100 }
+      ]
+    },
+    library: {
+      title: "添加素材弹药",
+      note: "保存到本机 Obsidian 素材库；未经核实的素材标记为“待核验”。",
+      fields: [
+        { name: "category", label: "素材分类", type: "select", options: ["核心概念", "金句", "案例", "爆款文稿"] },
+        { name: "title", label: "素材标题", type: "text", required: true, max: 180 },
+        { name: "content", label: "素材内容", type: "textarea", required: true, max: 5000 },
+        { name: "source", label: "原始来源链接（选填）", type: "url", max: 600, placeholder: "https://..." }
+      ]
+    }
+  };
+
+  function entryFieldHTML(field) {
+    const attrs = `name="${field.name}" id="entry-${field.name}" ${field.required ? "required" : ""} ${field.max ? `maxlength="${field.max}"` : ""}`;
+    let control;
+    if (field.type === "select") {
+      control = `<select ${attrs}>${field.options.map(option => `<option value="${esc(option)}">${esc(option)}</option>`).join("")}</select>`;
+    } else if (field.type === "textarea") {
+      control = `<textarea ${attrs} rows="5" placeholder="${esc(field.placeholder || "")} "></textarea>`;
+    } else {
+      control = `<input ${attrs} type="${field.type}" ${field.type === "number" ? `min="0" step="${field.step || "1"}"` : ""} ${field.max && field.type === "number" ? `max="${field.max}"` : ""} placeholder="${esc(field.placeholder || "")}">`;
+    }
+    return `<label class="wb-entry-field" for="entry-${field.name}"><span>${esc(field.label)}</span>${control}</label>`;
+  }
+
+  function setupEntryForms() {
+    const buttons = document.querySelectorAll("[data-entry-kind]");
+    if (!buttons.length) return;
+    const backdrop = document.createElement("div");
+    backdrop.className = "wb-entry-backdrop";
+    backdrop.hidden = true;
+    backdrop.innerHTML = `<section class="wb-entry-dialog" role="dialog" aria-modal="true" aria-labelledby="wb-entry-title">
+      <button type="button" class="wb-entry-close" aria-label="关闭录入窗口">×</button>
+      <h2 id="wb-entry-title"></h2><p id="wb-entry-note"></p>
+      <form id="wb-entry-form"><div id="wb-entry-fields"></div><div id="wb-entry-error" role="alert" aria-live="polite"></div>
+        <div class="wb-entry-actions"><button type="button" class="wb-entry-cancel">取消</button><button type="submit" class="wb-add-button">保存到本机</button></div>
+      </form></section>`;
+    document.body.appendChild(backdrop);
+    const form = $("#wb-entry-form", backdrop);
+    let currentKind = "";
+    let trigger = null;
+    const close = () => {
+      backdrop.hidden = true;
+      document.body.classList.remove("wb-entry-open");
+      trigger?.focus();
+    };
+    buttons.forEach(button => button.addEventListener("click", () => {
+      if (!["127.0.0.1", "localhost"].includes(window.location.hostname)) {
+        window.alert("录入功能只在本机启动的工作台可用。请使用桌面快捷方式打开。");
+        return;
+      }
+      currentKind = button.dataset.entryKind;
+      const spec = ENTRY_FORMS[currentKind];
+      if (!spec) return;
+      trigger = button;
+      $("#wb-entry-title", backdrop).textContent = spec.title;
+      $("#wb-entry-note", backdrop).textContent = spec.note;
+      $("#wb-entry-fields", backdrop).innerHTML = spec.fields.map(entryFieldHTML).join("");
+      $("#wb-entry-error", backdrop).textContent = "";
+      const dateValue = new Date();
+      const localDate = `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, "0")}-${String(dateValue.getDate()).padStart(2, "0")}`;
+      backdrop.querySelectorAll('input[type="date"]').forEach(input => { input.value = localDate; });
+      backdrop.hidden = false;
+      document.body.classList.add("wb-entry-open");
+      backdrop.querySelector("input, select, textarea")?.focus();
+    }));
+    backdrop.querySelector(".wb-entry-close").addEventListener("click", close);
+    backdrop.querySelector(".wb-entry-cancel").addEventListener("click", close);
+    backdrop.addEventListener("click", event => { if (event.target === backdrop) close(); });
+    document.addEventListener("keydown", event => { if (!backdrop.hidden && event.key === "Escape") close(); });
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      const save = form.querySelector('button[type="submit"]');
+      const error = $("#wb-entry-error", backdrop);
+      save.disabled = true;
+      save.textContent = "正在保存…";
+      error.textContent = "";
+      try {
+        const response = await fetch("/api/entries", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Workbench-Write": "1" },
+          body: JSON.stringify({ kind: currentKind, payload: Object.fromEntries(new FormData(form)) })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error || "保存失败");
+        window.location.reload();
+      } catch (problem) {
+        error.textContent = problem.message || "保存失败，请稍后重试";
+        save.disabled = false;
+        save.textContent = "保存到本机";
+      }
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     const data = dashboardData();
     const page = document.body.dataset.page || "index";
     setCorner(data, page);
     renderSideStatus(data);
     renderStaleBanner(data);
+    setupEntryForms();
     setupCopyButtons();
     if (page === "index") renderIndex(data);
     if (page === "ideas") renderIdeas(data);

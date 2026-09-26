@@ -622,6 +622,7 @@ def parse_radar_metrics(text: str) -> dict[str, Any]:
 
 def parse_radar(path: Path, warnings: list[str]) -> dict[str, Any]:
     fm, body = parse_front_matter(read_text(path, warnings))
+    fetch_time = re.search(r"(?m)^抓取时间[:：]\s*(\d{4}-\d{2}-\d{2})(?:\s+\d{2}:\d{2})?", body)
     lines = body.splitlines()
     signals: list[dict[str, Any]] = []
     full_fetch: list[dict[str, Any]] = []
@@ -812,6 +813,7 @@ def parse_radar(path: Path, warnings: list[str]) -> dict[str, Any]:
         "type_counts": dict(counts),
         "full_fetch": full_fetch,
         "updated": fm.get("updated") or fm.get("created") or "",
+        "last_fetch_date": fetch_time.group(1) if fetch_time else "",
     }
 
 
@@ -1208,6 +1210,7 @@ def parse_library(root: Path, warnings: list[str]) -> dict[str, Any]:
                 "type": clean_markdown(fm.get("type")) or category,
                 "created": created,
                 "tags": [clean_markdown(tag) for tag in tags],
+                "content": re.sub(r"(?m)^#\s+.+\n?", "", body, count=1).strip(),
                 "path": str(path.relative_to(root.parent)),
             }
         )
@@ -1567,7 +1570,7 @@ def compute_radar_freshness(root: Path, radar_data: dict[str, Any]) -> dict[str,
     绝不触碰 vault 外的路径，保持整个 build 可移植。
     """
     unknown = {"radar_last_date": None, "radar_stale_days": None, "data_freshness": "unknown"}
-    last_date = ""
+    dates_found: list[str] = []
 
     history_dir = root / "trends-history"
     if history_dir.is_dir():
@@ -1577,15 +1580,16 @@ def compute_radar_freshness(root: Path, radar_data: dict[str, Any]) -> dict[str,
             if re.fullmatch(r"\d{4}-\d{2}-\d{2}", path.stem)
         )
         if dates:
-            last_date = dates[-1]
+            dates_found.append(dates[-1])
 
-    if not last_date:
-        match = re.search(r"(\d{4}-\d{2}-\d{2})", str(radar_data.get("updated") or ""))
+    for value in (radar_data.get("last_fetch_date"), radar_data.get("updated")):
+        match = re.search(r"(\d{4}-\d{2}-\d{2})", str(value or ""))
         if match:
-            last_date = match.group(1)
+            dates_found.append(match.group(1))
 
-    if not last_date:
+    if not dates_found:
         return unknown
+    last_date = max(dates_found)
 
     try:
         parsed = datetime.strptime(last_date, "%Y-%m-%d").date()
